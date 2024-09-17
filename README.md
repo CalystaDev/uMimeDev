@@ -1,6 +1,6 @@
 # uMimeDev
 
-todo for saniya (9/2/24):
-- convert tasks to celery tasks
-- modify code for api routes accordingly ^
-- full test with redis server
+todo:
+- figure out how to efficiently generate images
+- finalize API (make it automatic)
+- test API
