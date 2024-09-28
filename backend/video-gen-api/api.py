@@ -177,9 +177,6 @@ def process_video_and_audio(script: str, script_with_time_delimiter: str, image_
                 curr_word = ''
             else:
                 curr_word += char
-        # if curr_word:
-        #     words.append((curr_word, start_times[-len(curr_word)], end_times[-1]))
-        #insert $ delimiters based on script_with_time_delimiter
         word_list = script_with_time_delimiter.split()
         word_count = 0
         for word in word_list:
@@ -204,6 +201,10 @@ async def generate_video(request: VideoRequest, background_tasks: BackgroundTask
 
     background_tasks.add_task(process_video_and_audio, script, script_with_times, image_prompts, request.voice_id)
     return {"message": "Video is being processed", "status": "processing"}
+
+@app.get("/get-title")
+async def get_title():
+    pass
 
 if __name__ == "__main__":
     import uvicorn

@@ -3,7 +3,7 @@ import requests
 url = "http://127.0.0.1:8000/generate-video"
 
 payload = {
-    "prompt": "how to learn to code",
+    "prompt": "how to fold clothes",
     "voice_id": "jsCqWAovK2LkecY7zXl4", #freya?
 }
 
@@ -23,3 +23,7 @@ print(response.json())
 # incorporate ari fix for timing --> DONE!
 # test
 # deploy server
+
+#notes:
+# gpt output quality may be impacted by the example since example is valley girl. 
+# perhaps we should change the example prompt for each character.
