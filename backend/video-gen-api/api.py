@@ -34,7 +34,7 @@ def construct_llm_prompt(prompt: str, voice_id: str) -> str:
     llm_prompt = base_prompt.replace("<promp-here>", prompt)
     return llm_prompt
 
-def generate_script_from_llm(prompt: str) -> str:
+def generate_script_from_llm(prompt: str) -> Tuple[List[str], str, str]:
     openai.api_key = open_ai_api_key
     try:
         response = openai.ChatCompletion.create(
@@ -42,23 +42,34 @@ def generate_script_from_llm(prompt: str) -> str:
             messages=[
                 {"role": "user", "content": prompt}
             ],
-            max_tokens=500,
+            max_tokens=1500,
             temperature=0.7,
         )
-        return response.choices[0].message['content']
+        response_content = response.choices[0].message['content']
+        script_lines = []
+        script_with_dollars = []
+        image_prompts = []
+        lines = response_content.splitlines()
+        for line in lines:
+            if match := re.search(r'\[Image Prompt: (.*?)\]', line):
+                image_prompts.append(match.group(1).strip())
+                script_with_dollars.append("$")
+            else:
+                script_lines.append(line)
+                script_with_dollars.append(line)
+        script = "\n".join(script_lines).strip()
+        script_with_dollars = "\n".join(script_with_dollars).strip()
+        return image_prompts, script, script_with_dollars #returns image prompts, script, script with $ for image change
     except Exception as e:
-        return f"An error occurred: {str(e)}"
+        return [], f"An error occurred: {str(e)}", ""
 
-def generate_images_from_script(script: str, temp_dir: str) -> Tuple[str, List[str]]:
-    sentences = re.split(r'(?<=[.!?]) +', script)
-    major_sentences = [s for s in sentences if len(s.split()) > 5]
+def generate_images_from_script(image_prompts: List[str], temp_dir: str) -> List[str]:
     image_paths = []
     openai.api_key = open_ai_api_key
-    modified_script = ""
-    for i, sentence in enumerate(major_sentences):
+    for i, prompt in enumerate(image_prompts):
         try:
             response = openai.Image.create(
-                prompt=sentence,
+                prompt=prompt,
                 n=1,
                 size="512x512"
             )
@@ -67,14 +78,9 @@ def generate_images_from_script(script: str, temp_dir: str) -> Tuple[str, List[s
             with open(image_path, 'wb') as img_file:
                 img_file.write(requests.get(image_url).content)
             image_paths.append(image_path)
-            #add special character $ to the script to indicate image change
-            # modified_script += sentence.strip() + " $ "
-            modified_script += "$ " + sentence.strip() + " "
         except Exception as e:
-            print(f"Error generating image for sentence '{sentence}': {e}")
-            modified_script += sentence.strip() + " "
-    modified_script = modified_script.strip().rstrip("$")
-    return modified_script, image_paths
+            print(f"Error generating image for prompt '{prompt}': {e}")
+    return image_paths
 
 def generate_audio(script: str, voice_id: str, temp_dir: str) -> str:
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/with-timestamps"
@@ -146,16 +152,16 @@ def upload_video_to_gcp(file_path: str, bucket_name: str, destination_blob_name:
     blob.upload_from_filename(file_path)
     print(f"File {file_path} uploaded to {bucket_name}/{destination_blob_name}.")
 
-def process_video_and_audio(script: str, voice_id: str):
+def process_video_and_audio(script: str, script_with_time_delimiter: str, image_prompts: list, voice_id: str):
     with tempfile.TemporaryDirectory() as temp_dir:
         video = download_video_from_gcp(temp_dir)
         
         #generate images and audio concurrently
         with ThreadPoolExecutor() as executor:
-            images_future = executor.submit(generate_images_from_script, script, temp_dir)
-            images_script, images = images_future.result()
+            images_future = executor.submit(generate_images_from_script, image_prompts, temp_dir)
+            images = images_future.result()
             print("NUM IMAGES: ", len(images))
-            audio_future = executor.submit(generate_audio, images_script, voice_id, temp_dir)
+            audio_future = executor.submit(generate_audio, script, voice_id, temp_dir)
 
             audio_file, response_dict = audio_future.result()
 
@@ -179,11 +185,12 @@ def process_video_and_audio(script: str, voice_id: str):
 @app.post("/generate-video")
 async def generate_video(request: VideoRequest, background_tasks: BackgroundTasks):
     prompt = construct_llm_prompt(request.prompt, request.voice_id)
-    print(prompt)
-    script = generate_script_from_llm(prompt)
-    print(script)
+    print("gpt output", prompt)
+    image_prompts, script, script_with_times = generate_script_from_llm(prompt)
+    print("audio script", script)
+    print("script with times", script_with_times)
 
-    background_tasks.add_task(process_video_and_audio, script, request.voice_id)
+    background_tasks.add_task(process_video_and_audio, script, script_with_times, image_prompts, request.voice_id)
     return {"message": "Video is being processed", "status": "processing"}
 
 if __name__ == "__main__":

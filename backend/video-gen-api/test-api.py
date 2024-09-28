@@ -19,9 +19,6 @@ print(response.json())
 
 
 #todo:
-# move subway surfers to storage --> DONE!
-# connect gpt api -- prompt generation for each character --> DONE!
-# image gen --> DONE!
-# push final videos to storage --> DONE!
-# test
-# deploy api and how to speed up video gen
+# update prompts for gpt + image gen
+# incorporate ari fix for timing
+# deploy server
