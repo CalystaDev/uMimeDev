@@ -117,7 +117,7 @@ def create_video_with_audio(video: str, images: list, words: list, audio_file: s
 
     for i, img in enumerate(images):
         img_clip = ImageClip(img).resize(height=1920/2).crop(x_center=bottom_clip.w/2, width=1080)
-        img_clip = img_clip.set_start(0 if i == 0 else image_end_times[i - 1]).set_end(image_end_times[i])
+        img_clip = img_clip.set_start(0 if i == 0 else image_end_times[i - 1]).set_end(image_end_times[i] if i != len(image_end_times) - 1 else bottom_clip.duration)
         img_clip = img_clip.resize(width=width)
         ken_burns_clip = img_clip.fx(resize, lambda t: 1 + 0.02 * t)
         cropped_image_clip = ken_burns_clip.crop(y2=height / 2).set_position(("center", "top"))
@@ -126,6 +126,7 @@ def create_video_with_audio(video: str, images: list, words: list, audio_file: s
     top_half_clip = concatenate_videoclips(image_clips, method="compose", padding=-0.2)
     final_clip = CompositeVideoClip([top_half_clip, bottom_half_clip.set_position(("center", "bottom"))], size=(width, height))
     audio_clip = AudioFileClip(audio_file)
+    final_clip.set_duration(audio_clip.duration)
     final_clip = final_clip.set_audio(audio_clip)
     caption_clips = []
     for text, start, end in words:
