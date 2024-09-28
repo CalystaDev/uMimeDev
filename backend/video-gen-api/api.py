@@ -112,12 +112,13 @@ def create_video_with_audio(video: str, images: list, words: list, audio_file: s
     bottom_half_clip = bottom_clip.crop(y1=height / 2 - 150, y2=height - 150)
 
     image_clips = []
-    image_end_times = [words[i][2] + 1 for i, word in enumerate(words) if word[0] == "$"]
+    image_end_times = [words[i - 1][2] + 1 for i, word in enumerate(words) if word[0] == "$"]
     print(image_end_times)
 
     for i, img in enumerate(images):
         img_clip = ImageClip(img).resize(height=1920/2).crop(x_center=bottom_clip.w/2, width=1080)
         img_clip = img_clip.set_start(0 if i == 0 else image_end_times[i - 1]).set_end(image_end_times[i])
+        img_clip = img_clip.resize(width=width)
         ken_burns_clip = img_clip.fx(resize, lambda t: 1 + 0.02 * t)
         cropped_image_clip = ken_burns_clip.crop(y2=height / 2).set_position(("center", "top"))
         image_clips.append(cropped_image_clip)
@@ -131,7 +132,7 @@ def create_video_with_audio(video: str, images: list, words: list, audio_file: s
         if text == '$':
             continue
         word_duration = (end - start)
-        word_clip = TextClip(text, fontsize=100, color='white', stroke_color='black', stroke_width=2, size=(width / 3, 500), font='Impact', align='center')
+        word_clip = TextClip(text, fontsize=100, color='white', stroke_color='black', stroke_width=2, font='Impact', align='center')
         word_clip = word_clip.set_position(('center', 'center')).set_start(start).set_duration(word_duration).crossfadein(0.1)
         caption_clips.append(word_clip)
     final_video_with_captions = CompositeVideoClip([final_clip] + caption_clips)
