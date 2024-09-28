@@ -19,6 +19,7 @@ print(response.json())
 
 
 #todo:
-# update prompts for gpt + image gen
-# incorporate ari fix for timing
+# update prompts for gpt + image gen --> DONE!
+# incorporate ari fix for timing --> DONE!
+# test
 # deploy server

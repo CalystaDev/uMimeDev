@@ -155,14 +155,13 @@ def upload_video_to_gcp(file_path: str, bucket_name: str, destination_blob_name:
 def process_video_and_audio(script: str, script_with_time_delimiter: str, image_prompts: list, voice_id: str):
     with tempfile.TemporaryDirectory() as temp_dir:
         video = download_video_from_gcp(temp_dir)
-        
+
         #generate images and audio concurrently
         with ThreadPoolExecutor() as executor:
             images_future = executor.submit(generate_images_from_script, image_prompts, temp_dir)
+            audio_future = executor.submit(generate_audio, script, voice_id, temp_dir)
             images = images_future.result()
             print("NUM IMAGES: ", len(images))
-            audio_future = executor.submit(generate_audio, script, voice_id, temp_dir)
-
             audio_file, response_dict = audio_future.result()
 
         words = []
@@ -170,13 +169,25 @@ def process_video_and_audio(script: str, script_with_time_delimiter: str, image_
         characters = response_dict['alignment']['characters']
         start_times = response_dict['alignment']['character_start_times_seconds']
         end_times = response_dict['alignment']['character_end_times_seconds']
-
         for i, char in enumerate(characters):
             if char == ' ':
+                # if curr_word:
                 words.append((curr_word, start_times[i - len(curr_word)], end_times[i - 1]))
                 curr_word = ''
             else:
                 curr_word += char
+        # if curr_word:
+        #     words.append((curr_word, start_times[-len(curr_word)], end_times[-1]))
+        #insert $ delimiters based on script_with_time_delimiter
+        word_list = script_with_time_delimiter.split()
+        word_count = 0
+        for word in word_list:
+            if word == "$":
+                if word_count > 0 and word_count <= len(words):
+                    previous_word = words[word_count - 1]
+                    words.insert(word_count, ("$", previous_word[1], previous_word[2]))
+            else:
+                word_count += 1
 
         final_video_path = create_video_with_audio(video, images, words, audio_file, temp_dir)
         #upload final video to GCP bucket "mimes"
