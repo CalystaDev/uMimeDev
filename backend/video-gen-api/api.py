@@ -47,7 +47,8 @@ def generate_script_from_llm(prompt: str) -> Tuple[List[str], str, str, str]:
         )
         response_content = response.choices[0].message['content']
         title, script_body = response_content.split("#####", 1)
-
+        title.strip()
+        
         script_lines = []
         script_with_dollars = []
         image_prompts = []
