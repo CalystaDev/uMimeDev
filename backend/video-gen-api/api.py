@@ -34,7 +34,7 @@ def construct_llm_prompt(prompt: str, voice_id: str) -> str:
     llm_prompt = base_prompt.replace("<promp-here>", prompt)
     return llm_prompt
 
-def generate_script_from_llm(prompt: str) -> Tuple[List[str], str, str]:
+def generate_script_from_llm(prompt: str) -> Tuple[List[str], str, str, str]:
     openai.api_key = open_ai_api_key
     try:
         response = openai.ChatCompletion.create(
@@ -46,10 +46,13 @@ def generate_script_from_llm(prompt: str) -> Tuple[List[str], str, str]:
             temperature=0.7,
         )
         response_content = response.choices[0].message['content']
+        title, script_body = response_content.split("#####", 1)
+        title.strip()
+        
         script_lines = []
         script_with_dollars = []
         image_prompts = []
-        lines = response_content.splitlines()
+        lines = script_body.splitlines()
         for line in lines:
             if match := re.search(r'\[Image Prompt: (.*?)\]', line):
                 image_prompts.append(match.group(1).strip())
@@ -59,7 +62,7 @@ def generate_script_from_llm(prompt: str) -> Tuple[List[str], str, str]:
                 script_with_dollars.append(line)
         script = "\n".join(script_lines).strip()
         script_with_dollars = "\n".join(script_with_dollars).strip()
-        return image_prompts, script, script_with_dollars #returns image prompts, script, script with $ for image change
+        return image_prompts, title, script, script_with_dollars #returns image prompts, script, script with $ for image change
     except Exception as e:
         return [], f"An error occurred: {str(e)}", ""
 
