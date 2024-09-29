@@ -15,7 +15,6 @@ import tempfile
 import re
 from typing import List, Tuple
 
-# storage_client = storage.Client(project='umime-ba35e')
 storage_client = storage.Client()
 BUCKET_NAME = 'background-vids'
 VIDEO_FILE_NAME = 'subwaysurfers.mov'
@@ -26,6 +25,12 @@ eleven_labs_api_key = 'KEY'
 app = FastAPI()
 
 class VideoRequest(BaseModel):
+    image_prompts: list
+    script: str
+    script_with_time_delimiter: str
+    voice_id: str
+
+class ScriptRequest(BaseModel):
     prompt: str
     voice_id: str
 
@@ -195,20 +200,20 @@ def process_video_and_audio(script: str, script_with_time_delimiter: str, image_
         #upload final video to GCP bucket "mimes"
         upload_video_to_gcp(final_video_path, bucket_name="mimes", destination_blob_name=os.path.basename(final_video_path))
 
-@app.post("/generate-video")
-async def generate_video(request: VideoRequest, background_tasks: BackgroundTasks):
+@app.post("/get-script-and-title")
+async def get_script_and_title(request: ScriptRequest):
     prompt = construct_llm_prompt(request.prompt, request.voice_id)
-    print("gpt output", prompt)
-    image_prompts, script, script_with_times = generate_script_from_llm(prompt)
+    print("input to gpt:", prompt)
+    image_prompts, title, script, script_with_times = generate_script_from_llm(prompt)
     print("audio script", script)
     print("script with times", script_with_times)
+    print("title", title)
+    return {"title": title, "script": script, "script_with_time_delimiter": script_with_times, "image_prompts": image_prompts}
 
-    background_tasks.add_task(process_video_and_audio, script, script_with_times, image_prompts, request.voice_id)
+@app.post("/generate-video")
+async def generate_video(request: VideoRequest, background_tasks: BackgroundTasks):
+    background_tasks.add_task(process_video_and_audio, request.script, request.script_with_time_delimiter, request.image_prompts, request.voice_id)
     return {"message": "Video is being processed", "status": "processing"}
-
-@app.get("/get-title")
-async def get_title():
-    pass
 
 if __name__ == "__main__":
     import uvicorn
