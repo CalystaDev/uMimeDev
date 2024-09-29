@@ -19,8 +19,10 @@ storage_client = storage.Client()
 BUCKET_NAME = 'background-vids'
 VIDEO_FILE_NAME = 'subwaysurfers.mov'
 
-open_ai_api_key = 'KEY'
-eleven_labs_api_key = 'KEY'
+# open_ai_api_key = 'KEY'
+# eleven_labs_api_key = 'KEY'
+open_ai_api_key = os.getenv("OPEN_AI_API_KEY")
+eleven_labs_api_key = os.getenv("ELEVEN_LABS_API_KEY")
 
 app = FastAPI()
 

@@ -1,0 +1,107 @@
+aiohttp==3.10.7
+anyio==4.4.0
+attrs==24.2.0
+fastapi==0.112.2
+ffmpeg==1.4
+google-api-core>=2.20.0,<3.0.0
+google-auth>=2.35.0
+google-cloud-core>=2.4.1
+google-cloud-storage>=2.18.2
+grpcio-tools>=1.51.1
+moviepy==1.0.3
+numpy==2.0.2
+openai==0.28.0
+protobuf>=3.19.5,<6.0.0
+pydantic==2.8.2
+requests==2.32.3
+uvicorn==0.30.6
+
+# aiohappyeyeballs==2.4.2
+# aiohttp==3.10.7
+# aiosignal==1.3.1
+# amqp==5.2.0
+# annotated-types==0.7.0
+# anyio==4.4.0
+# async-timeout==4.0.3
+# attrs==24.2.0
+# billiard==4.2.0
+# cachetools==5.5.0
+# celery==5.4.0
+# certifi==2024.8.30
+# charset-normalizer==3.3.2
+# click==8.1.7
+# click-didyoumean==0.3.1
+# click-plugins==1.1.1
+# click-repl==0.3.0
+# contourpy==1.3.0
+# cycler==0.12.1
+# decorator==4.4.2
+# distro==1.9.0
+# exceptiongroup==1.2.2
+# fastapi==0.112.2
+# ffmpeg==1.4
+# filelock==3.15.4
+# fonttools==4.54.1
+# frozenlist==1.4.1
+# fsspec==2024.6.1
+# google-api-core==2.20.0
+# google-auth==2.35.0
+# google-cloud-core==2.4.1
+# google-cloud-storage==2.18.2
+# google-crc32c==1.6.0
+# google-resumable-media==2.7.2
+# googleapis-common-protos==1.65.0
+# grpcio-tools==1.51.1
+# h11==0.14.0
+# httpcore==1.0.5
+# httpx==0.27.2
+# huggingface-hub==0.24.6
+# idna==3.8
+# imageio==2.35.1
+# imageio-ffmpeg==0.5.1
+# importlib_resources==6.4.5
+# jiter==0.5.0
+# kiwisolver==1.4.7
+# kombu==5.4.0
+# llama-cli==1.0.18
+# llama_stack==0.0.1a5
+# matplotlib==3.9.2
+# moviepy==1.0.3
+# multidict==6.1.0
+# numpy==2.0.2
+# openai==0.28.0
+# packaging==24.1
+# pandas==2.2.3
+# Pillow==9.0.1
+# proglog==0.1.10
+# prompt_toolkit==3.0.47
+# proto-plus==1.24.0
+# protobuf==5.28.2
+# pyasn1==0.6.1
+# pyasn1_modules==0.4.1
+# pydantic==2.8.2
+# pydantic_core==2.20.1
+# pyparsing==3.1.4
+# python-dateutil==2.9.0.post0
+# pytz==2024.2
+# PyYAML==6.0.2
+# redis==5.0.8
+# regex==2024.7.24
+# requests==2.32.3
+# rsa==4.9
+# safetensors==0.4.4
+# scipy==1.13.1
+# six==1.16.0
+# sniffio==1.3.1
+# starlette==0.38.4
+# tokenizers==0.19.1
+# tqdm==4.66.5
+# transformers==4.44.2
+# typing_extensions==4.12.2
+# tzdata==2024.1
+# urllib3==2.2.2
+# uvicorn==0.30.6
+# vine==5.1.0
+# wcwidth==0.2.13
+# yarl==1.13.1
+# zipp==3.20.2
