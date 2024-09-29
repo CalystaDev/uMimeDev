@@ -134,7 +134,7 @@ def create_video_with_audio(video: str, images: list, words: list, audio_file: s
     top_half_clip = concatenate_videoclips(image_clips, method="compose", padding=-0.2)
     final_clip = CompositeVideoClip([top_half_clip, bottom_half_clip.set_position(("center", "bottom"))], size=(width, height))
     audio_clip = AudioFileClip(audio_file)
-    final_clip.set_duration(audio_clip.duration)
+    final_clip = final_clip.set_duration(audio_clip.duration)
     final_clip = final_clip.set_audio(audio_clip)
     caption_clips = []
     for text, start, end in words:
