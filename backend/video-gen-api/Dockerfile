@@ -5,6 +5,7 @@ FROM python:3.10-slim
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
+ENV HOST 0.0.0.0
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
