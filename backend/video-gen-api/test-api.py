@@ -2,11 +2,12 @@ import requests
 import json
 
 # Base URL of the FastAPI server
-base_url = "http://127.0.0.1:8000"
+# base_url = "http://127.0.0.1:8000"
+base_url = "https://fastapi-video-app-1010927570704.us-east1.run.app"
 
 # Payload for getting script and title
 script_request_payload = {
-    "prompt": "how to get into college",
+    "prompt": "how to get a boyfriend",
     "voice_id": "jsCqWAovK2LkecY7zXl4"  # Example voice_id, you can replace this
 }
 
