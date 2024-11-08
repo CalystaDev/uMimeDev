@@ -15,8 +15,8 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Modify ImageMagick policy.xml to allow necessary operations
-RUN sed -i 's/<policy domain="coder" rights="none" pattern="PS" \/>/<policy domain="coder" rights="read|write" pattern="PS" \/>/g' /etc/ImageMagick-6/policy.xml || true \
-    && sed -i 's/<policy domain="path" rights="none" pattern="@*" \/>/<policy domain="path" rights="read|write" pattern="@*" \/>/g' /etc/ImageMagick-6/policy.xml || true
+RUN sed -i 's/<policy domain="path" rights="none" pattern="@\*" \/>/<policy domain="path" rights="read|write" pattern="@*" \/>/g' /etc/ImageMagick-6/policy.xml || true \
+    && sed -i 's/<policy domain="coder" rights="none" pattern="PS" \/>/<policy domain="coder" rights="read|write" pattern="PS" \/>/g' /etc/ImageMagick-6/policy.xml || true
 
 # Set working directory
 WORKDIR /app
