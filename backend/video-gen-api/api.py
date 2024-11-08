@@ -114,8 +114,45 @@ def generate_audio(script: str, voice_id: str, temp_dir: str) -> str:
         f.write(audio_bytes)
     return audio_file_path, response_dict
 
-def create_video_with_audio(video: str, images: list, words: list, audio_file: str, temp_dir: str):
-    bottom_clip = VideoFileClip(video)
+# def create_video_with_audio(video: str, images: list, words: list, audio_file: str, temp_dir: str):
+#     bottom_clip = VideoFileClip(video)
+#     bottom_clip = bottom_clip.resize(height=1920)
+#     bottom_clip = bottom_clip.crop(x_center=bottom_clip.w / 2, width=1080)
+#     width, height = bottom_clip.size
+#     bottom_half_clip = bottom_clip.crop(y1=height / 2 - 150, y2=height - 150)
+
+#     image_clips = []
+#     image_end_times = [words[i - 1][2] + 1 for i, word in enumerate(words) if word[0] == "$"]
+#     print(image_end_times)
+
+#     for i, img in enumerate(images):
+#         img_clip = ImageClip(img).resize(height=1920/2).crop(x_center=bottom_clip.w/2, width=1080)
+#         img_clip = img_clip.set_start(0 if i == 0 else image_end_times[i - 1]).set_end(image_end_times[i] if i != len(image_end_times) - 1 else bottom_clip.duration)
+#         img_clip = img_clip.resize(width=width)
+#         ken_burns_clip = img_clip.fx(resize, lambda t: 1 + 0.02 * t)
+#         cropped_image_clip = ken_burns_clip.crop(y2=height / 2).set_position(("center", "top"))
+#         image_clips.append(cropped_image_clip)
+
+#     top_half_clip = concatenate_videoclips(image_clips, method="compose", padding=-0.2)
+#     final_clip = CompositeVideoClip([top_half_clip, bottom_half_clip.set_position(("center", "bottom"))], size=(width, height))
+#     audio_clip = AudioFileClip(audio_file)
+#     final_clip = final_clip.set_duration(audio_clip.duration)
+#     final_clip = final_clip.set_audio(audio_clip)
+#     caption_clips = []
+#     for text, start, end in words:
+#         if text == '$':
+#             continue
+#         word_duration = (end - start)
+#         word_clip = TextClip(text, fontsize=100, color='white', stroke_color='black', stroke_width=2, font='Impact', align='center')
+#         word_clip = word_clip.set_position(('center', 'center')).set_start(start).set_duration(word_duration).crossfadein(0.1)
+#         caption_clips.append(word_clip)
+#     final_video_with_captions = CompositeVideoClip([final_clip] + caption_clips)
+#     output_file = os.path.join(temp_dir, f"final_video_with_audio_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4")
+#     final_video_with_captions.write_videofile(output_file, audio_codec="aac")
+#     return output_file
+
+def create_video_with_audio(video_path: str, images: list, words: list, audio_file: str, temp_dir: str):
+    bottom_clip = VideoFileClip(video_path)  # Pass the file path instead of BytesIO
     bottom_clip = bottom_clip.resize(height=1920)
     bottom_clip = bottom_clip.crop(x_center=bottom_clip.w / 2, width=1080)
     width, height = bottom_clip.size
@@ -151,6 +188,7 @@ def create_video_with_audio(video: str, images: list, words: list, audio_file: s
     final_video_with_captions.write_videofile(output_file, audio_codec="aac")
     return output_file
 
+
 def download_video_from_gcp(temp_dir: str):
     video_file_path = os.path.join(temp_dir, VIDEO_FILE_NAME)
     bucket = storage_client.bucket(BUCKET_NAME)
@@ -164,11 +202,48 @@ def upload_video_to_gcp(file_path: str, bucket_name: str, destination_blob_name:
     blob.upload_from_filename(file_path)
     print(f"File {file_path} uploaded to {bucket_name}/{destination_blob_name}.")
 
+# def process_video_and_audio(script: str, script_with_time_delimiter: str, image_prompts: list, voice_id: str):
+#     with tempfile.TemporaryDirectory() as temp_dir:
+#         video = download_video_from_gcp(temp_dir)
+
+#         #generate images and audio concurrently
+#         with ThreadPoolExecutor() as executor:
+#             images_future = executor.submit(generate_images_from_script, image_prompts, temp_dir)
+#             audio_future = executor.submit(generate_audio, script, voice_id, temp_dir)
+#             images = images_future.result()
+#             print("NUM IMAGES: ", len(images))
+#             audio_file, response_dict = audio_future.result()
+
+#         words = []
+#         curr_word = ''
+#         characters = response_dict['alignment']['characters']
+#         start_times = response_dict['alignment']['character_start_times_seconds']
+#         end_times = response_dict['alignment']['character_end_times_seconds']
+#         for i, char in enumerate(characters):
+#             if char == ' ':
+#                 # if curr_word:
+#                 words.append((curr_word, start_times[i - len(curr_word)], end_times[i - 1]))
+#                 curr_word = ''
+#             else:
+#                 curr_word += char
+#         word_list = script_with_time_delimiter.split()
+#         word_count = 0
+#         for word in word_list:
+#             if word == "$":
+#                 if word_count > 0 and word_count <= len(words):
+#                     previous_word = words[word_count - 1]
+#                     words.insert(word_count, ("$", previous_word[1], previous_word[2]))
+#             else:
+#                 word_count += 1
+
+#         final_video_path = create_video_with_audio(video, images, words, audio_file, temp_dir)
+#         #upload final video to GCP bucket "mimes"
+#         upload_video_to_gcp(final_video_path, bucket_name="mimes", destination_blob_name=os.path.basename(final_video_path))
+
 def process_video_and_audio(script: str, script_with_time_delimiter: str, image_prompts: list, voice_id: str):
     with tempfile.TemporaryDirectory() as temp_dir:
-        video = download_video_from_gcp(temp_dir)
-
-        #generate images and audio concurrently
+        video_path = download_video_from_gcp(temp_dir)  # This will download the video file
+        # Generate images and audio concurrently
         with ThreadPoolExecutor() as executor:
             images_future = executor.submit(generate_images_from_script, image_prompts, temp_dir)
             audio_future = executor.submit(generate_audio, script, voice_id, temp_dir)
@@ -183,7 +258,6 @@ def process_video_and_audio(script: str, script_with_time_delimiter: str, image_
         end_times = response_dict['alignment']['character_end_times_seconds']
         for i, char in enumerate(characters):
             if char == ' ':
-                # if curr_word:
                 words.append((curr_word, start_times[i - len(curr_word)], end_times[i - 1]))
                 curr_word = ''
             else:
@@ -198,8 +272,7 @@ def process_video_and_audio(script: str, script_with_time_delimiter: str, image_
             else:
                 word_count += 1
 
-        final_video_path = create_video_with_audio(video, images, words, audio_file, temp_dir)
-        #upload final video to GCP bucket "mimes"
+        final_video_path = create_video_with_audio(video_path, images, words, audio_file, temp_dir)
         upload_video_to_gcp(final_video_path, bucket_name="mimes", destination_blob_name=os.path.basename(final_video_path))
 
 @app.post("/get-script-and-title")
