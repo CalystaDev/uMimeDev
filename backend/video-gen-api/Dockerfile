@@ -14,9 +14,8 @@ RUN apt-get update && apt-get install -y \
     libxext6 \
     && rm -rf /var/lib/apt/lists/*
 
-# Modify ImageMagick policy.xml to allow necessary operations
-RUN sed -i 's/<policy domain="path" rights="none" pattern="@\*" \/>/<policy domain="path" rights="read|write" pattern="@*" \/>/g' /etc/ImageMagick-6/policy.xml || true \
-    && sed -i 's/<policy domain="coder" rights="none" pattern="PS" \/>/<policy domain="coder" rights="read|write" pattern="PS" \/>/g' /etc/ImageMagick-6/policy.xml || true
+# Copy the custom policy.xml to overwrite the default ImageMagick policy
+COPY policy.xml /etc/ImageMagick-6/policy.xml
 
 # Set working directory
 WORKDIR /app
