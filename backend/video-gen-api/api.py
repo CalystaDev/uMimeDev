@@ -147,3 +147,72 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
     # Upload final video to GCS
     gcs_video_url = upload_to_gcs(output_file, BUCKET_NAME, f"{video_id}/final_video.mp4")
     return gcs_video_url
+
+# Initialize Flask app
+app = Flask(__name__)
+
+@app.route('/generate_script', methods=['POST'])
+def generate_script():
+    data = request.json
+    prompt = data.get('prompt')
+    voice_id = data.get('voice_id')
+    
+    if not prompt or not voice_id:
+        return jsonify({"error": "Prompt and voice_id are required"}), 400
+
+    llm_prompt = construct_llm_prompt(prompt, voice_id)
+    image_prompts, title, script, script_with_dollars = generate_script_from_llm(llm_prompt)
+    
+    if not script:
+        return jsonify({"error": "Error generating script"}), 500
+    
+    video_id = str(datetime.datetime.now().timestamp())
+    generation_data[video_id] = {
+        'image_prompts': image_prompts,
+        'title': title,
+        'script': script,
+        'script_with_dollars': script_with_dollars
+    }
+    
+    return jsonify({"video_id": video_id, "title": title, "script": script}), 200
+
+@app.route('/generate_images/<video_id>', methods=['POST'])
+def generate_images(video_id):
+    if video_id not in generation_data:
+        return jsonify({"error": "Invalid video_id"}), 400
+
+    data = generation_data[video_id]
+    image_prompts = data['image_prompts']
+    image_paths = generate_images_from_script(image_prompts, video_id)
+    
+    generation_data[video_id]['image_paths'] = image_paths
+    return jsonify({"message": "Images generated", "image_paths": image_paths}), 200
+
+@app.route('/generate_audio/<video_id>', methods=['POST'])
+def generate_audio_for_video(video_id):
+    if video_id not in generation_data:
+        return jsonify({"error": "Invalid video_id"}), 400
+
+    data = generation_data[video_id]
+    script = data['script_with_dollars']
+    audio_file_path, _ = generate_audio(script, "voice_1", video_id)  # Adjust `voice_id` as needed
+    generation_data[video_id]['audio_file_path'] = audio_file_path
+
+    return jsonify({"message": "Audio generated", "audio_file": audio_file_path}), 200
+
+@app.route('/create_video/<video_id>', methods=['POST'])
+def create_video(video_id):
+    if video_id not in generation_data:
+        return jsonify({"error": "Invalid video_id"}), 400
+    
+    data = generation_data[video_id]
+    image_paths = data['image_paths']
+    script = data['script']
+    audio_file_path = data['audio_file_path']
+    
+    video_path = "sample_video.mp4"  # Use actual path or download from GCS as necessary
+    final_video_file = create_video_with_audio(video_path, image_paths, script.split("\n"), audio_file_path, video_id)
+    return jsonify({"message": "Video created successfully", "video_file": final_video_file}), 200
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5000)
