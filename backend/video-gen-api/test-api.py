@@ -1,5 +1,6 @@
 import requests
 import json
+import uuid
 
 # Base URL of the FastAPI server
 # base_url = "http://127.0.0.1:8000"
@@ -34,62 +35,57 @@ if script_response.status_code == 200:
 
     print("THIS IS THE TITLE: ", script_data.get("title"))
 
-    # Prepare payload for /generate-video endpoint
-    generate_video_payload = {
-        "image_prompts": image_prompts,
-        "script": script,
-        "script_with_time_delimiter": script_with_time_delimiter,
-        "voice_id": voice_id
+    # Step 2: Generate unique video_id
+    video_id = str(uuid.uuid4())
+
+    # Store the script, title, image prompts in memory or a database (not shown here)
+    # In your case, make sure you store them properly in the backend.
+    generation_data = {
+        video_id: {
+            "image_prompts": image_prompts,
+            "script": script,
+            "script_with_time_delimiter": script_with_time_delimiter,
+            "voice_id": voice_id
+        }
     }
 
-    # Step 2: Use the response from /get-script-and-title to generate the video
-    generate_video_url = f"{base_url}/generate-video"
-    video_response = requests.post(generate_video_url, json=generate_video_payload, headers=headers)
+    # Step 3: Generate images
+    generate_images_url = f"{base_url}/generate_images/{video_id}"
+    images_response = requests.post(generate_images_url, json={}, headers=headers)
 
-    # Print the response from the /generate-video endpoint
-    print("Generate Video Response:")
-    print(video_response.status_code)
-    print(video_response.json())
+    if images_response.status_code == 200:
+        print("Images generated successfully")
+        print(images_response.json())
+        
+        # Step 4: Generate audio
+        generate_audio_url = f"{base_url}/generate_audio/{video_id}"
+        audio_response = requests.post(generate_audio_url, json={}, headers=headers)
+
+        if audio_response.status_code == 200:
+            print("Audio generated successfully")
+            print(audio_response.json())
+
+            # Step 5: Create the video
+            create_video_url = f"{base_url}/create_video/{video_id}"
+            video_response = requests.post(create_video_url, json={}, headers=headers)
+
+            if video_response.status_code == 200:
+                print("Video created successfully")
+                print(video_response.json())
+            else:
+                print("Failed to create video")
+                print(video_response.status_code)
+                print(video_response.text)
+        else:
+            print("Failed to generate audio")
+            print(audio_response.status_code)
+            print(audio_response.text)
+    else:
+        print("Failed to generate images")
+        print(images_response.status_code)
+        print(images_response.text)
+
 else:
     print("Failed to get script and title.")
     print(f"Status Code: {script_response.status_code}")
     print(script_response.text)
-
-
-
-
-
-
-
-
-# import requests
-
-# url = "http://127.0.0.1:8000/generate-video"
-
-# payload = {
-#     "prompt": "how to fold clothes",
-#     "voice_id": "jsCqWAovK2LkecY7zXl4", #freya?
-# }
-
-# headers = {
-#     "Content-Type": "application/json"
-# }
-
-# response = requests.post(url, json=payload, headers=headers)
-
-# # Print the response from the server
-# print(response.status_code)
-# print(response.json())
-
-
-#todo:
-# update prompts for gpt + image gen --> DONE!
-# incorporate ari fix for timing --> DONE!
-# test
-# deploy server
-
-#notes:
-# gpt output quality may be impacted by the example since example is valley girl. 
-# perhaps we should change the example prompt for each character.
-
-#
