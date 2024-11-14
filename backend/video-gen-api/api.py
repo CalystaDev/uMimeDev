@@ -1,26 +1,40 @@
-import os
-import datetime
-import json
-import re
+from fastapi import FastAPI, BackgroundTasks
+from moviepy.editor import VideoFileClip, ImageClip, concatenate_videoclips, CompositeVideoClip, AudioFileClip, TextClip
+from moviepy.video.fx.all import resize
 import requests
 import base64
-from typing import List, Tuple
-import openai
-from prompts import prompts
+import json
+import os
+import datetime
+from concurrent.futures import ThreadPoolExecutor
+from pydantic import BaseModel
 from google.cloud import storage
-from moviepy.editor import VideoFileClip, TextClip, concatenate_videoclips, CompositeVideoClip, AudioFileClip
-from flask import Flask, request, jsonify
+from prompts import prompts
+import openai
+import tempfile
+import re
+from typing import List, Tuple
 
-# Set up your API keys
-open_ai_api_key = os.getenv("OPEN_AI_API_KEY")
-eleven_labs_api_key = os.getenv("ELEVEN_LABS_API_KEY")
+storage_client = storage.Client()
 BUCKET_NAME = 'background-vids'
 VIDEO_FILE_NAME = 'subwaysurfers.mov'
 
-storage_client = storage.Client()
+# open_ai_api_key = 'KEY'
+# eleven_labs_api_key = 'KEY'
+open_ai_api_key = os.getenv("OPEN_AI_API_KEY")
+eleven_labs_api_key = os.getenv("ELEVEN_LABS_API_KEY")
 
-# In-memory storage for each part of the process
-generation_data = {}
+app = FastAPI()
+
+class VideoRequest(BaseModel):
+    image_prompts: list
+    script: str
+    script_with_time_delimiter: str
+    voice_id: str
+
+class ScriptRequest(BaseModel):
+    prompt: str
+    voice_id: str
 
 def construct_llm_prompt(prompt: str, voice_id: str) -> str:
     base_prompt = prompts[voice_id]
@@ -40,7 +54,7 @@ def generate_script_from_llm(prompt: str) -> Tuple[List[str], str, str, str]:
         )
         response_content = response.choices[0].message['content']
         title, script_body = response_content.split("#####", 1)
-        title = title.strip()
+        title.strip()
         
         script_lines = []
         script_with_dollars = []
@@ -55,9 +69,9 @@ def generate_script_from_llm(prompt: str) -> Tuple[List[str], str, str, str]:
                 script_with_dollars.append(line)
         script = "\n".join(script_lines).strip()
         script_with_dollars = "\n".join(script_with_dollars).strip()
-        return image_prompts, title, script, script_with_dollars
+        return image_prompts, title, script, script_with_dollars #returns image prompts, script, script with $ for image change
     except Exception as e:
-        return [], f"An error occurred: {str(e)}", "", ""
+        return [], f"An error occurred: {str(e)}", ""
 
 def generate_images_from_script(image_prompts: List[str], temp_dir: str) -> List[str]:
     image_paths = []
@@ -101,7 +115,7 @@ def generate_audio(script: str, voice_id: str, temp_dir: str) -> str:
     return audio_file_path, response_dict
 
 def create_video_with_audio(video_path: str, images: list, words: list, audio_file: str, temp_dir: str):
-    bottom_clip = VideoFileClip(video_path)
+    bottom_clip = VideoFileClip(video_path)  # Pass the file path instead of BytesIO
     bottom_clip = bottom_clip.resize(height=1920)
     bottom_clip = bottom_clip.crop(x_center=bottom_clip.w / 2, width=1080)
     width, height = bottom_clip.size
@@ -109,6 +123,7 @@ def create_video_with_audio(video_path: str, images: list, words: list, audio_fi
 
     image_clips = []
     image_end_times = [words[i - 1][2] + 1 for i, word in enumerate(words) if word[0] == "$"]
+    print(image_end_times)
 
     for i, img in enumerate(images):
         img_clip = ImageClip(img).resize(height=1920/2).crop(x_center=bottom_clip.w/2, width=1080)
@@ -136,6 +151,7 @@ def create_video_with_audio(video_path: str, images: list, words: list, audio_fi
     final_video_with_captions.write_videofile(output_file, audio_codec="aac")
     return output_file
 
+
 def download_video_from_gcp(temp_dir: str):
     video_file_path = os.path.join(temp_dir, VIDEO_FILE_NAME)
     bucket = storage_client.bucket(BUCKET_NAME)
@@ -149,102 +165,56 @@ def upload_video_to_gcp(file_path: str, bucket_name: str, destination_blob_name:
     blob.upload_from_filename(file_path)
     print(f"File {file_path} uploaded to {bucket_name}/{destination_blob_name}.")
 
-# Initialize Flask app
-app = Flask(__name__)
+def process_video_and_audio(script: str, script_with_time_delimiter: str, image_prompts: list, voice_id: str):
+    with tempfile.TemporaryDirectory() as temp_dir:
+        video_path = download_video_from_gcp(temp_dir)  # This will download the video file
+        # Generate images and audio concurrently
+        with ThreadPoolExecutor() as executor:
+            images_future = executor.submit(generate_images_from_script, image_prompts, temp_dir)
+            audio_future = executor.submit(generate_audio, script, voice_id, temp_dir)
+            images = images_future.result()
+            print("NUM IMAGES: ", len(images))
+            audio_file, response_dict = audio_future.result()
 
-@app.route('/generate_script', methods=['POST'])
-def generate_script():
-    # Get data from the request
-    data = request.json
-    prompt = data.get('prompt')
-    voice_id = data.get('voice_id')
-    
-    if not prompt or not voice_id:
-        return jsonify({"error": "Prompt and voice_id are required"}), 400
+        words = []
+        curr_word = ''
+        characters = response_dict['alignment']['characters']
+        start_times = response_dict['alignment']['character_start_times_seconds']
+        end_times = response_dict['alignment']['character_end_times_seconds']
+        for i, char in enumerate(characters):
+            if char == ' ':
+                words.append((curr_word, start_times[i - len(curr_word)], end_times[i - 1]))
+                curr_word = ''
+            else:
+                curr_word += char
+        word_list = script_with_time_delimiter.split()
+        word_count = 0
+        for word in word_list:
+            if word == "$":
+                if word_count > 0 and word_count <= len(words):
+                    previous_word = words[word_count - 1]
+                    words.insert(word_count, ("$", previous_word[1], previous_word[2]))
+            else:
+                word_count += 1
 
-    llm_prompt = construct_llm_prompt(prompt, voice_id)
-    
-    # Generate script from LLM
-    image_prompts, title, script, script_with_dollars = generate_script_from_llm(llm_prompt)
-    
-    if not script:
-        return jsonify({"error": "Error generating script"}), 500
-    
-    # Save data in the in-memory storage
-    video_id = str(datetime.datetime.now().timestamp())  # Unique ID for this video generation session
-    generation_data[video_id] = {
-        'image_prompts': image_prompts,
-        'title': title,
-        'script': script,
-        'script_with_dollars': script_with_dollars
-    }
-    
-    return jsonify({"video_id": video_id, "title": title, "script": script}), 200
+        final_video_path = create_video_with_audio(video_path, images, words, audio_file, temp_dir)
+        upload_video_to_gcp(final_video_path, bucket_name="mimes", destination_blob_name=os.path.basename(final_video_path))
 
-@app.route('/generate_images/<video_id>', methods=['POST'])
-def generate_images(video_id):
-    # Check if video_id exists in generation data
-    if video_id not in generation_data:
-        return jsonify({"error": "Invalid video_id"}), 400
+@app.post("/get-script-and-title")
+async def get_script_and_title(request: ScriptRequest):
+    prompt = construct_llm_prompt(request.prompt, request.voice_id)
+    print("input to gpt:", prompt)
+    image_prompts, title, script, script_with_times = generate_script_from_llm(prompt)
+    print("audio script", script)
+    print("script with times", script_with_times)
+    print("title", title)
+    return {"title": title, "script": script, "script_with_time_delimiter": script_with_times, "image_prompts": image_prompts}
 
-    data = generation_data[video_id]
-    image_prompts = data['image_prompts']
-    
-    # Create temporary directory for files
-    temp_dir = os.path.join("/tmp", str(datetime.datetime.now().timestamp()))
-    os.makedirs(temp_dir, exist_ok=True)
-    
-    # Generate images
-    image_paths = generate_images_from_script(image_prompts, temp_dir)
-    
-    # Save image paths in generation data
-    generation_data[video_id]['image_paths'] = image_paths
+@app.post("/generate-video")
+async def generate_video(request: VideoRequest, background_tasks: BackgroundTasks):
+    background_tasks.add_task(process_video_and_audio, request.script, request.script_with_time_delimiter, request.image_prompts, request.voice_id)
+    return {"message": "Video is being processed", "status": "processing"}
 
-    return jsonify({"message": "Images generated", "image_paths": image_paths}), 200
-
-@app.route('/generate_audio/<video_id>', methods=['POST'])
-def generate_audio_for_video(video_id):
-    # Check if video_id exists in generation data
-    if video_id not in generation_data:
-        return jsonify({"error": "Invalid video_id"}), 400
-
-    data = generation_data[video_id]
-    script = data['script_with_dollars']
-    
-    # Create temporary directory for files
-    temp_dir = os.path.join("/tmp", str(datetime.datetime.now().timestamp()))
-    os.makedirs(temp_dir, exist_ok=True)
-    
-    # Generate audio
-    voice_id = "voice_1"  # Assuming this is passed from the client or set earlier
-    audio_file_path, _ = generate_audio(script, voice_id, temp_dir)
-    
-    # Save audio path in generation data
-    generation_data[video_id]['audio_file_path'] = audio_file_path
-
-    return jsonify({"message": "Audio generated", "audio_file": audio_file_path}), 200
-
-@app.route('/create_video/<video_id>', methods=['POST'])
-def create_video(video_id):
-    # Check if video_id exists in generation data
-    if video_id not in generation_data:
-        return jsonify({"error": "Invalid video_id"}), 400
-    
-    data = generation_data[video_id]
-    image_paths = data['image_paths']
-    script = data['script']
-    audio_file_path = data['audio_file_path']
-    
-    # Assuming the video path is predefined or uploaded
-    video_path = "sample_video.mp4"  # Example placeholder
-
-    # Create video
-    final_video_file = create_video_with_audio(video_path, image_paths, script.split("\n"), audio_file_path, "/tmp")
-    
-    # Upload to GCP
-    upload_video_to_gcp(final_video_file, BUCKET_NAME, VIDEO_FILE_NAME)
-    
-    return jsonify({"message": "Video created successfully", "video_file": final_video_file}), 200
-
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8080)
