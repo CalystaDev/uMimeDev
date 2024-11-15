@@ -4,7 +4,7 @@ import requests
 BASE_URL = "https://apitaketwo-1010927570704.us-east1.run.app"
 
 # Example data for testing
-test_prompt = "how to make iced latte"
+test_prompt = "how to make a pizza"
 test_voice_id = "jsCqWAovK2LkecY7zXl4"  # Replace with the actual voice ID if needed
 
 def test_generate_script():
@@ -48,8 +48,20 @@ def test_generate_audio(video_id):
 def test_create_video(video_id):
     url = f"{BASE_URL}/create_video/{video_id}"
     response = requests.post(url)
-    print("Create Video Response:", response.json())
-    return response.json().get("video_file")
+    
+    # Check if the response is successful and contains JSON
+    if response.status_code == 200:
+        try:
+            json_response = response.json()
+            print("Create Video Response:", json_response)
+            return json_response.get("video_file")
+        except ValueError:  # Handle JSON decode error
+            print("Error: Response is not JSON.")
+    else:
+        print(f"Error: Received status code {response.status_code}")
+        print("Response text:", response.text)  # Log the response content for debugging
+    
+    return None
 
 # Run the tests in sequence
 if __name__ == "__main__":

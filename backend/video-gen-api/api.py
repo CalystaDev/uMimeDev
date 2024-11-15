@@ -8,7 +8,8 @@ from typing import List, Tuple
 import openai
 from prompts import prompts
 from google.cloud import storage
-from moviepy.editor import VideoFileClip, TextClip, concatenate_videoclips, CompositeVideoClip, AudioFileClip
+from moviepy.editor import VideoFileClip, TextClip, concatenate_videoclips, CompositeVideoClip, AudioFileClip, ImageClip
+from moviepy.video.fx.all import resize
 from flask import Flask, request, jsonify
 
 # Set up your API keys
@@ -28,6 +29,12 @@ def upload_to_gcs(local_file_path: str, bucket_name: str, destination_blob_name:
     blob.upload_from_filename(local_file_path)
     os.remove(local_file_path)  # Optional: Remove the local file after upload
     return blob.public_url  # Return the public URL of the file
+
+def download_video_from_gcs(video_file_path: str, video_file_name: str):
+    bucket = storage_client.bucket(BUCKET_NAME)
+    blob = bucket.blob(video_file_name)
+    blob.download_to_filename(video_file_path)
+    return video_file_path
 
 def construct_llm_prompt(prompt: str, voice_id: str) -> str:
     base_prompt = prompts[voice_id]
@@ -87,7 +94,7 @@ def generate_images_from_script(image_prompts: List[str], video_id: str) -> List
             print(f"Error generating image for prompt '{prompt}': {e}")
     return image_urls
 
-def generate_audio(script: str, voice_id: str, video_id: str) -> str:
+def generate_audio(script: str, script_with_time_delimiter: str, voice_id: str, video_id: str) -> str:
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/with-timestamps"
     headers = {"Content-Type": "application/json", "xi-api-key": eleven_labs_api_key}
     data = {
@@ -108,7 +115,27 @@ def generate_audio(script: str, voice_id: str, video_id: str) -> str:
         f.write(audio_bytes)
     # Upload audio to GCS
     gcs_audio_url = upload_to_gcs(audio_file_path, BUCKET_NAME, f"{video_id}/audio/output.mp3")
-    return gcs_audio_url, response_dict
+    words = []
+    curr_word = ''
+    characters = response_dict['alignment']['characters']
+    start_times = response_dict['alignment']['character_start_times_seconds']
+    end_times = response_dict['alignment']['character_end_times_seconds']
+    for i, char in enumerate(characters):
+        if char == ' ':
+            words.append((curr_word, start_times[i - len(curr_word)], end_times[i - 1]))
+            curr_word = ''
+        else:
+            curr_word += char
+    word_list = script_with_time_delimiter.split()
+    word_count = 0
+    for word in word_list:
+        if word == "$":
+            if word_count > 0 and word_count <= len(words):
+                previous_word = words[word_count - 1]
+                words.insert(word_count, ("$", previous_word[1], previous_word[2]))
+        else:
+            word_count += 1
+    return gcs_audio_url, response_dict, words
 
 def create_video_with_audio(video_path: str, image_urls: list, words: list, audio_url: str, video_id: str):
     bottom_clip = VideoFileClip(video_path)
@@ -118,10 +145,14 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
     bottom_half_clip = bottom_clip.crop(y1=height / 2 - 150, y2=height - 150)
 
     image_clips = []
+    print(f"words {words}")
     image_end_times = [words[i - 1][2] + 1 for i, word in enumerate(words) if word[0] == "$"]
 
+    print(image_end_times)
     for i, image_url in enumerate(image_urls):
-        img_clip = ImageClip(image_url).resize(height=1920/2).crop(x_center=bottom_clip.w/2, width=1080)
+        print(image_url)
+        temp_path = download_video_from_gcs(f"/tmp/image{i}.png", image_url.replace("https://storage.googleapis.com/background-vids/", ""))
+        img_clip = ImageClip(temp_path).resize(height=1920/2).crop(x_center=bottom_clip.w/2, width=1080)
         img_clip = img_clip.set_start(0 if i == 0 else image_end_times[i - 1]).set_end(image_end_times[i] if i != len(image_end_times) - 1 else bottom_clip.duration)
         img_clip = img_clip.resize(width=width)
         ken_burns_clip = img_clip.fx(resize, lambda t: 1 + 0.02 * t)
@@ -130,7 +161,8 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
 
     top_half_clip = concatenate_videoclips(image_clips, method="compose", padding=-0.2)
     final_clip = CompositeVideoClip([top_half_clip, bottom_half_clip.set_position(("center", "bottom"))], size=(width, height))
-    audio_clip = AudioFileClip(audio_url)
+    temp_audio = download_video_from_gcs(f"/tmp/audio.mp3", audio_url.replace("https://storage.googleapis.com/background-vids/", ""))
+    audio_clip = AudioFileClip(temp_audio)
     final_clip = final_clip.set_duration(audio_clip.duration)
     final_clip = final_clip.set_audio(audio_clip)
     caption_clips = []
@@ -194,25 +226,47 @@ def generate_audio_for_video(video_id):
         return jsonify({"error": "Invalid video_id"}), 400
 
     data = generation_data[video_id]
-    script = data['script_with_dollars']
-    audio_file_path, _ = generate_audio(script, "jsCqWAovK2LkecY7zXl4", video_id)  # Adjust `voice_id` as needed
+    script = data['script']
+    script_with_dollars = data['script_with_dollars']
+    audio_file_path, _, words = generate_audio(script, script_with_dollars, "jsCqWAovK2LkecY7zXl4", video_id)  # Adjust `voice_id` as needed
     generation_data[video_id]['audio_file_path'] = audio_file_path
+    generation_data[video_id]['words'] = words
 
     return jsonify({"message": "Audio generated", "audio_file": audio_file_path}), 200
 
 @app.route('/create_video/<video_id>', methods=['POST'])
 def create_video(video_id):
+    print(f"Received request to create video with ID: {video_id}")
+
+    # Check if video_id exists in generation_data
     if video_id not in generation_data:
+        print("Error: Invalid video_id")
         return jsonify({"error": "Invalid video_id"}), 400
-    
-    data = generation_data[video_id]
-    image_paths = data['image_paths']
-    script = data['script']
-    audio_file_path = data['audio_file_path']
-    
-    video_path = "sample_video.mp4"  # Use actual path or download from GCS as necessary
-    final_video_file = create_video_with_audio(video_path, image_paths, script.split("\n"), audio_file_path, video_id)
-    return jsonify({"message": "Video created successfully", "video_file": final_video_file}), 200
+
+    try:
+        data = generation_data[video_id]
+        image_paths = data['image_paths']
+        words = data['words']
+        audio_file_path = data['audio_file_path']
+        
+        print(f"Data for video ID {video_id}: {data}")
+
+        # Download or specify the path to the video
+        video_path = download_video_from_gcs("/tmp/subwaysurfers.mov", VIDEO_FILE_NAME)  # Ensure this function is correctly implemented
+        print(f"Video path: {video_path}")
+
+        # Create the video with audio
+        final_video_file = create_video_with_audio(
+            video_path, image_paths, words, audio_file_path, video_id
+        )
+        print(f"Final video created: {final_video_file}")
+
+        return jsonify({"message": "Video created successfully", "video_file": final_video_file}), 200
+
+    except Exception as e:
+        print(f"Error during video creation: {e}")
+        return jsonify({"error": "An error occurred during video creation"}), 500
+
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=8080)
