@@ -195,7 +195,7 @@ def generate_audio_for_video(video_id):
 
     data = generation_data[video_id]
     script = data['script_with_dollars']
-    audio_file_path, _ = generate_audio(script, "voice_1", video_id)  # Adjust `voice_id` as needed
+    audio_file_path, _ = generate_audio(script, "jsCqWAovK2LkecY7zXl4", video_id)  # Adjust `voice_id` as needed
     generation_data[video_id]['audio_file_path'] = audio_file_path
 
     return jsonify({"message": "Audio generated", "audio_file": audio_file_path}), 200
@@ -215,4 +215,4 @@ def create_video(video_id):
     return jsonify({"message": "Video created successfully", "video_file": final_video_file}), 200
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=8080)

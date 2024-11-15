@@ -4,6 +4,7 @@ FROM python:3.10-slim
 # Set environment variables to prevent .pyc files and buffer stdout/stderr
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV FLASK_APP=api.py
 
 # Install system dependencies for video and image processing
 RUN apt-get update && apt-get install -y \
@@ -27,8 +28,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY api.py /app
 COPY prompts.py /app
 
-# Expose the port the app will run on
-EXPOSE 5000
-
+EXPOSE 8080
 # Run the application with Flask
-CMD ["flask", "run", "--host=0.0.0.0", "--port=5000"]
+CMD ["flask", "run", "--host=0.0.0.0", "--port=8080"]
