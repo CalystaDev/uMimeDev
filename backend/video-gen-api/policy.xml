@@ -1,0 +1,9 @@
+<policymap>
+  <policy domain="resource" name="temporary-path" value="/tmp"/>
+  <policy domain="resource" name="memory" value="2GiB"/>
+  <policy domain="resource" name="map" value="4GiB"/>
+  <policy domain="resource" name="area" value="4GiB"/>
+  <policy domain="resource" name="disk" value="16EB"/>
+  <policy domain="coder" rights="read|write"/>
+  <policy domain="path" rights="read|write" pattern="@*"/>
+</policymap>
