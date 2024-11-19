@@ -28,7 +28,9 @@ COPY api.py /app
 COPY prompts.py /app
 
 # Expose the port the app will run on
-EXPOSE 5000
+ENV FLASK_APP=api.py
+ENV PORT=8080
+EXPOSE 8080
 
 # Run the application with Flask
-CMD ["flask", "run", "--host=0.0.0.0", "--port=5000"]
+CMD ["flask", "run", "--host=0.0.0.0", "--port=8080"]
