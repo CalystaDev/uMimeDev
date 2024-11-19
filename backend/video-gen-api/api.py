@@ -10,6 +10,8 @@ from prompts import prompts
 from google.cloud import storage
 from moviepy.editor import VideoFileClip, TextClip, concatenate_videoclips, CompositeVideoClip, AudioFileClip
 from flask import Flask, request, jsonify
+import cv2
+import numpy as np
 
 # Set up your API keys
 open_ai_api_key = os.getenv("OPEN_AI_API_KEY")
@@ -110,43 +112,77 @@ def generate_audio(script: str, voice_id: str, video_id: str) -> str:
     gcs_audio_url = upload_to_gcs(audio_file_path, BUCKET_NAME, f"{video_id}/audio/output.mp3")
     return gcs_audio_url, response_dict
 
+# def create_video_with_audio(video_path: str, image_urls: list, words: list, audio_url: str, video_id: str):
+#     bottom_clip = VideoFileClip(video_path)
+#     bottom_clip = bottom_clip.resize(height=1920)
+#     bottom_clip = bottom_clip.crop(x_center=bottom_clip.w / 2, width=1080)
+#     width, height = bottom_clip.size
+#     bottom_half_clip = bottom_clip.crop(y1=height / 2 - 150, y2=height - 150)
+
+#     image_clips = []
+#     image_end_times = [words[i - 1][2] + 1 for i, word in enumerate(words) if word[0] == "$"]
+
+#     for i, image_url in enumerate(image_urls):
+#         img_clip = ImageClip(image_url).resize(height=1920/2).crop(x_center=bottom_clip.w/2, width=1080)
+#         img_clip = img_clip.set_start(0 if i == 0 else image_end_times[i - 1]).set_end(image_end_times[i] if i != len(image_end_times) - 1 else bottom_clip.duration)
+#         img_clip = img_clip.resize(width=width)
+#         ken_burns_clip = img_clip.fx(resize, lambda t: 1 + 0.02 * t)
+#         cropped_image_clip = ken_burns_clip.crop(y2=height / 2).set_position(("center", "top"))
+#         image_clips.append(cropped_image_clip)
+
+#     top_half_clip = concatenate_videoclips(image_clips, method="compose", padding=-0.2)
+#     final_clip = CompositeVideoClip([top_half_clip, bottom_half_clip.set_position(("center", "bottom"))], size=(width, height))
+#     audio_clip = AudioFileClip(audio_url)
+#     final_clip = final_clip.set_duration(audio_clip.duration)
+#     final_clip = final_clip.set_audio(audio_clip)
+#     caption_clips = []
+#     for text, start, end in words:
+#         if text == '$':
+#             continue
+#         word_duration = (end - start)
+#         word_clip = TextClip(text, fontsize=100, color='white', stroke_color='black', stroke_width=2, font='Impact', align='center')
+#         word_clip = word_clip.set_position(('center', 'center')).set_start(start).set_duration(word_duration).crossfadein(0.1)
+#         caption_clips.append(word_clip)
+#     final_video_with_captions = CompositeVideoClip([final_clip] + caption_clips)
+#     output_file = f"final_video_with_audio_{video_id}.mp4"
+#     final_video_with_captions.write_videofile(output_file, audio_codec="aac")
+#     # Upload final video to GCS
+#     gcs_video_url = upload_to_gcs(output_file, BUCKET_NAME, f"{video_id}/final_video.mp4")
+#     return gcs_video_url
+
 def create_video_with_audio(video_path: str, image_urls: list, words: list, audio_url: str, video_id: str):
-    bottom_clip = VideoFileClip(video_path)
-    bottom_clip = bottom_clip.resize(height=1920)
-    bottom_clip = bottom_clip.crop(x_center=bottom_clip.w / 2, width=1080)
-    width, height = bottom_clip.size
-    bottom_half_clip = bottom_clip.crop(y1=height / 2 - 150, y2=height - 150)
-
-    image_clips = []
-    image_end_times = [words[i - 1][2] + 1 for i, word in enumerate(words) if word[0] == "$"]
-
-    for i, image_url in enumerate(image_urls):
-        img_clip = ImageClip(image_url).resize(height=1920/2).crop(x_center=bottom_clip.w/2, width=1080)
-        img_clip = img_clip.set_start(0 if i == 0 else image_end_times[i - 1]).set_end(image_end_times[i] if i != len(image_end_times) - 1 else bottom_clip.duration)
-        img_clip = img_clip.resize(width=width)
-        ken_burns_clip = img_clip.fx(resize, lambda t: 1 + 0.02 * t)
-        cropped_image_clip = ken_burns_clip.crop(y2=height / 2).set_position(("center", "top"))
-        image_clips.append(cropped_image_clip)
-
-    top_half_clip = concatenate_videoclips(image_clips, method="compose", padding=-0.2)
-    final_clip = CompositeVideoClip([top_half_clip, bottom_half_clip.set_position(("center", "bottom"))], size=(width, height))
-    audio_clip = AudioFileClip(audio_url)
-    final_clip = final_clip.set_duration(audio_clip.duration)
-    final_clip = final_clip.set_audio(audio_clip)
-    caption_clips = []
-    for text, start, end in words:
-        if text == '$':
-            continue
-        word_duration = (end - start)
-        word_clip = TextClip(text, fontsize=100, color='white', stroke_color='black', stroke_width=2, font='Impact', align='center')
-        word_clip = word_clip.set_position(('center', 'center')).set_start(start).set_duration(word_duration).crossfadein(0.1)
-        caption_clips.append(word_clip)
-    final_video_with_captions = CompositeVideoClip([final_clip] + caption_clips)
+    cap = cv2.VideoCapture(video_path)
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = cap.get(cv2.CAP_PROP_FPS)
     output_file = f"final_video_with_audio_{video_id}.mp4"
-    final_video_with_captions.write_videofile(output_file, audio_codec="aac")
-    # Upload final video to GCS
-    gcs_video_url = upload_to_gcs(output_file, BUCKET_NAME, f"{video_id}/final_video.mp4")
-    return gcs_video_url
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(output_file, fourcc, fps, (width, height))
+    overlay_images = [cv2.imread(image_url) for image_url in image_urls]
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 2
+    font_color = (255, 255, 255)
+    thickness = 2
+    frame_idx = 0
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+        for i, (text, start, end) in enumerate(words):
+            if start <= frame_idx / fps <= end:
+                cv2.putText(frame, text, (50, 50), font, font_scale, font_color, thickness, cv2.LINE_AA)
+                if i < len(overlay_images):
+                    img = cv2.resize(overlay_images[i], (width, height))
+                    alpha = 0.6
+                    frame = cv2.addWeighted(frame, 1 - alpha, img, alpha, 0)
+        out.write(frame)
+        frame_idx += 1
+    cap.release()
+    out.release()
+    final_output = f"final_output_with_audio_{video_id}.mp4"
+    os.system(f'ffmpeg -i {output_file} -i {audio_url} -c:v copy -c:a aac {final_output}')
+    return final_output
+
 
 # Initialize Flask app
 app = Flask(__name__)

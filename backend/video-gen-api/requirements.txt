@@ -10,6 +10,7 @@ grpcio-tools>=1.51.1
 moviepy==1.0.3
 numpy==2.0.2
 openai==0.28.0
+opencv-python-headless==4.8.1.78
 protobuf>=3.19.5,<6.0.0
 pydantic==2.8.2
 requests==2.32.3
