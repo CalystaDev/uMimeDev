@@ -4,12 +4,12 @@ import uuid
 
 # Base URL of the FastAPI server
 # base_url = "http://127.0.0.1:8000"
-base_url = "https://fastapi-video-app-1010927570704.us-east1.run.app"
+base_url = "https://apitaketwo-1010927570704.us-east1.run.app"
 
 # Payload for getting script and title
 script_request_payload = {
-    "prompt": "how to get a boyfriend",
-    "voice_id": "jsCqWAovK2LkecY7zXl4"  # Example voice_id, you can replace this
+    "prompt": "how to make a vanilla latte",
+    "voice_id": "2EiwWnXFnvU5JabPnv8n"  # Example voice_id, you can replace this
 }
 
 # Headers for the requests
