@@ -231,7 +231,7 @@ def generate_audio_for_video(video_id):
 
     data = generation_data[video_id]
     script = data['script_with_dollars']
-    audio_file_path, _ = generate_audio(script, "voice_1", video_id)  # Adjust `voice_id` as needed
+    audio_file_path, _ = generate_audio(script, "jsCqWAovK2LkecY7zXl4", video_id)  # FIX!!!!
     generation_data[video_id]['audio_file_path'] = audio_file_path
 
     return jsonify({"message": "Audio generated", "audio_file": audio_file_path}), 200
