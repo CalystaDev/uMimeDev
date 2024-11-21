@@ -31,6 +31,12 @@ def upload_to_gcs(local_file_path: str, bucket_name: str, destination_blob_name:
     os.remove(local_file_path)  # Optional: Remove the local file after upload
     return blob.public_url  # Return the public URL of the file
 
+def download_video_from_gcs(video_file_path: str, video_file_name: str):
+    bucket = storage_client.bucket(BUCKET_NAME)
+    blob = bucket.blob(video_file_name)
+    blob.download_to_filename(video_file_path)
+    return video_file_path
+
 def construct_llm_prompt(prompt: str, voice_id: str) -> str:
     base_prompt = prompts[voice_id]
     llm_prompt = base_prompt.replace("<promp-here>", prompt)
@@ -89,7 +95,7 @@ def generate_images_from_script(image_prompts: List[str], video_id: str) -> List
             print(f"Error generating image for prompt '{prompt}': {e}")
     return image_urls
 
-def generate_audio(script: str, voice_id: str, video_id: str) -> str:
+def generate_audio(script: str, script_with_time_delimiter: str, voice_id: str, video_id: str) -> str:
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/with-timestamps"
     headers = {"Content-Type": "application/json", "xi-api-key": eleven_labs_api_key}
     data = {
@@ -110,7 +116,28 @@ def generate_audio(script: str, voice_id: str, video_id: str) -> str:
         f.write(audio_bytes)
     # Upload audio to GCS
     gcs_audio_url = upload_to_gcs(audio_file_path, BUCKET_NAME, f"{video_id}/audio/output.mp3")
-    return gcs_audio_url, response_dict
+    
+    words = []
+    curr_word = ''
+    characters = response_dict['alignment']['characters']
+    start_times = response_dict['alignment']['character_start_times_seconds']
+    end_times = response_dict['alignment']['character_end_times_seconds']
+    for i, char in enumerate(characters):
+        if char == ' ':
+            words.append((curr_word, start_times[i - len(curr_word)], end_times[i - 1]))
+            curr_word = ''
+        else:
+            curr_word += char
+    word_list = script_with_time_delimiter.split()
+    word_count = 0
+    for word in word_list:
+        if word == "$":
+            if word_count > 0 and word_count <= len(words):
+                previous_word = words[word_count - 1]
+                words.insert(word_count, ("$", previous_word[1], previous_word[2]))
+        else:
+            word_count += 1
+    return gcs_audio_url, response_dict, words
 
 # def create_video_with_audio(video_path: str, image_urls: list, words: list, audio_url: str, video_id: str):
 #     bottom_clip = VideoFileClip(video_path)
@@ -150,6 +177,15 @@ def generate_audio(script: str, voice_id: str, video_id: str) -> str:
 #     gcs_video_url = upload_to_gcs(output_file, BUCKET_NAME, f"{video_id}/final_video.mp4")
 #     return gcs_video_url
 
+def read_image_from_url(url):
+    response = requests.get(url, stream=True)
+    if response.status_code == 200:
+        img_array = np.asarray(bytearray(response.content), dtype=np.uint8)
+        image = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+        return image
+    else:
+        raise ValueError(f"Failed to fetch image from URL: {url}, status code: {response.status_code}")
+
 def create_video_with_audio(video_path: str, image_urls: list, words: list, audio_url: str, video_id: str):
     cap = cv2.VideoCapture(video_path)
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -158,18 +194,40 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
     output_file = f"final_video_with_audio_{video_id}.mp4"
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter(output_file, fourcc, fps, (width, height))
-    overlay_images = [cv2.imread(image_url) for image_url in image_urls]
+
+    overlay_images = []
+    print(f"Image URLs: image_urls")
+    for i, image_url in enumerate(image_urls):
+        print(f"Downloading image {i} from {image_url}")
+        temp_path = download_video_from_gcs(f"/tmp/image_{i}.png", image_url.replace("https://storage.googleapis.com/background-vids/", ""))
+        img = cv2.imread(temp_path)
+        if img is None:
+            print(f"Error: Could not load image {temp_path}")
+        overlay_images.append(img)
+
+    print(f"Number of overlay images loaded: {len(overlay_images)}")
+
     font = cv2.FONT_HERSHEY_SIMPLEX
     font_scale = 2
     font_color = (255, 255, 255)
     thickness = 2
+
     frame_idx = 0
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
+            print(f"End of video reached at frame {frame_idx}")
             break
+        
+        if frame is None:
+            print(f"Warning: Empty frame at {frame_idx}")
+            continue
+
         for i, (text, start, end) in enumerate(words):
+            if text == '$':
+                continue
             if start <= frame_idx / fps <= end:
+                print(f"Adding text '{text}' at frame {frame_idx}")
                 cv2.putText(frame, text, (50, 50), font, font_scale, font_color, thickness, cv2.LINE_AA)
                 if i < len(overlay_images):
                     img = cv2.resize(overlay_images[i], (width, height))
@@ -179,9 +237,22 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
         frame_idx += 1
     cap.release()
     out.release()
+
+    if not os.path.exists(output_file):
+        raise RuntimeError(f"Error: Output video {output_file} was not created.")
+
     final_output = f"final_output_with_audio_{video_id}.mp4"
-    os.system(f'ffmpeg -i {output_file} -i {audio_url} -c:v copy -c:a aac {final_output}')
-    return final_output
+
+    audio_path = download_video_from_gcs(f"/tmp/audio.mp3", audio_url.replace("https://storage.googleapis.com/background-vids/", ""))
+    ffmpeg_command = f'ffmpeg -i {output_file} -i {audio_path} -c:v copy -c:a aac {final_output}'
+    print(f"Running FFmpeg command: {ffmpeg_command}")
+    result = os.system(ffmpeg_command)
+
+    if result != 0:
+        raise RuntimeError("Error: FFmpeg command failed.")
+
+    gcs_video_url = upload_to_gcs(output_file, BUCKET_NAME, f"{video_id}/final_video.mp4")
+    return gcs_video_url
 
 
 # Initialize Flask app
@@ -210,6 +281,8 @@ def generate_script():
         'script_with_dollars': script_with_dollars
     }
     
+    print(generation_data[video_id])
+
     return jsonify({"video_id": video_id, "title": title, "script": script}), 200
 
 @app.route('/generate_images/<video_id>', methods=['POST'])
@@ -230,9 +303,11 @@ def generate_audio_for_video(video_id):
         return jsonify({"error": "Invalid video_id"}), 400
 
     data = generation_data[video_id]
-    script = data['script_with_dollars']
-    audio_file_path, _ = generate_audio(script, "jsCqWAovK2LkecY7zXl4", video_id)  # FIX!!!!
+    script = data['script']
+    script_with_dollars = data['script_with_dollars']
+    audio_file_path, _, words = generate_audio(script, script_with_dollars, "jsCqWAovK2LkecY7zXl4", video_id)
     generation_data[video_id]['audio_file_path'] = audio_file_path
+    generation_data[video_id]['words'] = words
 
     return jsonify({"message": "Audio generated", "audio_file": audio_file_path}), 200
 
@@ -243,11 +318,12 @@ def create_video(video_id):
     
     data = generation_data[video_id]
     image_paths = data['image_paths']
-    script = data['script']
+    words = data['words']
     audio_file_path = data['audio_file_path']
     
-    video_path = "sample_video.mp4"  # Use actual path or download from GCS as necessary
-    final_video_file = create_video_with_audio(video_path, image_paths, script.split("\n"), audio_file_path, video_id)
+    video_path = download_video_from_gcs("/tmp/subwaysurfers.mov", VIDEO_FILE_NAME)
+    final_video_file = create_video_with_audio(video_path, image_paths, words, audio_file_path, video_id)
+
     return jsonify({"message": "Video created successfully", "video_file": final_video_file}), 200
 
 if __name__ == '__main__':
