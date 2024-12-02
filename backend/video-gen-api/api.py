@@ -12,7 +12,10 @@ from moviepy.editor import VideoFileClip, TextClip, concatenate_videoclips, Comp
 from flask import Flask, request, jsonify
 import cv2
 import numpy as np
-
+import firebase_admin
+from firebase_admin import credentials, auth, firestore
+from functools import wraps
+from flask import request, jsonify
 # Set up your API keys
 open_ai_api_key = os.getenv("OPEN_AI_API_KEY")
 eleven_labs_api_key = os.getenv("ELEVEN_LABS_API_KEY")
@@ -21,8 +24,130 @@ VIDEO_FILE_NAME = 'subwaysurfers.mov'
 
 storage_client = storage.Client()
 
+# Initialize Firebase Admin
+cred = credentials.Certificate('path/to/serviceAccountKey.json')
+firebase_admin.initialize_app(cred)
+db = firestore.client()
+
+def verify_firebase_token(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({'error': 'No token provided'}), 401
+        
+        token = auth_header.split('Bearer ')[1]
+        try:
+            decoded_token = auth.verify_id_token(token)
+            request.user = decoded_token
+            return f(*args, **kwargs)
+        except Exception as e:
+            return jsonify({'error': 'Invalid token'}), 401
+    return decorated_function
+
 # In-memory storage for each part of the process
 generation_data = {}
+
+@app.route('/create_mime', methods=['POST'])
+@verify_firebase_token
+def create_mime():
+    user_id = request.user['uid']
+    data = request.json
+    prompt = data.get('prompt')
+    host_id = data.get('hostId')
+    
+    if not prompt or not host_id:
+        return jsonify({"error": "Prompt and hostId are required"}), 400
+    
+    try:
+        # Create initial mime document in Firestore
+        mime_ref = db.collection('users').document(user_id)
+        new_mime = {
+            'createdAt': firestore.SERVER_TIMESTAMP,
+            'duration': 0,  # Will be updated later
+            'hosts': [host_id],
+            'prompt': prompt,
+            'rating': -1,
+            'script': '',  # Will be updated
+            'status': 'Processing',
+            'title': '',  # Will be updated
+            'videoURL': ''  # Will be updated
+        }
+        
+        # Update user's mimes array
+        user_ref = db.collection('users').document(user_id)
+        user_doc = user_ref.get()
+        if user_doc.exists:
+            mimes = user_doc.to_dict().get('mimes', [])
+            mimes.append(new_mime)
+            user_ref.update({'mimes': mimes})
+        
+        # Start the video generation process
+        llm_prompt = construct_llm_prompt(prompt, host_id)
+        image_prompts, title, script, script_with_dollars = generate_script_from_llm(llm_prompt)
+        
+        if not script:
+            return jsonify({"error": "Error generating script"}), 500
+        
+        video_id = str(datetime.datetime.now().timestamp())
+        
+        # Update mime document with initial content
+        mimes[-1].update({
+            'title': title,
+            'script': script,
+            'mid': video_id
+        })
+        user_ref.update({'mimes': mimes})
+        
+        # Start async processing (you'll need to implement this)
+        process_mime_async(video_id, image_prompts, script_with_dollars, user_id, len(mimes) - 1)
+        
+        return jsonify({
+            "message": "Mime creation started",
+            "mimeId": video_id
+        }), 200
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+async def process_mime_async(video_id, image_prompts, script, user_id, mime_index):
+    try:
+        # Generate images
+        image_paths = generate_images_from_script(image_prompts, video_id)
+        
+        # Generate audio
+        audio_file_path, _ = generate_audio(script, "jsCqWAovK2LkecY7zXl4", video_id)
+        
+        # Create video
+        video_path = "sample_video.mp4"
+        final_video_file = create_video_with_audio(video_path, image_paths, script.split("\n"), audio_file_path, video_id)
+        
+        # Upload to Google Cloud Storage
+        video_url = upload_to_gcs(final_video_file, BUCKET_NAME, f"{video_id}/final_video.mp4")
+        
+        # Update Firestore document
+        user_ref = db.collection('users').document(user_id)
+        user_doc = user_ref.get()
+        if user_doc.exists:
+            mimes = user_doc.to_dict().get('mimes', [])
+            if mime_index < len(mimes):
+                mimes[mime_index].update({
+                    'status': 'Complete',
+                    'videoURL': video_url,
+                    'duration': 30  # Replace with actual duration
+                })
+                user_ref.update({'mimes': mimes})
+                
+    except Exception as e:
+        print(f"Error processing mime: {str(e)}")
+        # Update Firestore with error status
+        user_ref = db.collection('users').document(user_id)
+        user_doc = user_ref.get()
+        if user_doc.exists:
+            mimes = user_doc.to_dict().get('mimes', [])
+            if mime_index < len(mimes):
+                mimes[mime_index]['status'] = 'Error'
+                user_ref.update({'mimes': mimes})
 
 def upload_to_gcs(local_file_path: str, bucket_name: str, destination_blob_name: str) -> str:
     bucket = storage_client.bucket(bucket_name)
