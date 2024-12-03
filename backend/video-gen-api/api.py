@@ -12,10 +12,16 @@ from moviepy.editor import VideoFileClip, TextClip, concatenate_videoclips, Comp
 from flask import Flask, request, jsonify
 import cv2
 import numpy as np
+from dotenv import load_dotenv
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
 from functools import wraps
 from flask import request, jsonify
+from flask_cors import CORS
+
+
+load_dotenv()
+
 # Set up your API keys
 open_ai_api_key = os.getenv("OPEN_AI_API_KEY")
 eleven_labs_api_key = os.getenv("ELEVEN_LABS_API_KEY")
@@ -25,7 +31,7 @@ VIDEO_FILE_NAME = 'subwaysurfers.mov'
 storage_client = storage.Client()
 
 # Initialize Firebase Admin
-cred = credentials.Certificate('path/to/serviceAccountKey.json')
+cred = credentials.Certificate('./firebase-credentials.json')
 firebase_admin.initialize_app(cred)
 db = firestore.client()
 
