@@ -13,7 +13,6 @@ from flask import Flask, request, jsonify
 import cv2
 import numpy as np
 
-# Set up your API keys
 open_ai_api_key = os.getenv("OPEN_AI_API_KEY")
 eleven_labs_api_key = os.getenv("ELEVEN_LABS_API_KEY")
 BUCKET_NAME = 'background-vids'
@@ -21,15 +20,14 @@ VIDEO_FILE_NAME = 'subwaysurfers.mov'
 
 storage_client = storage.Client()
 
-# In-memory storage for each part of the process
 generation_data = {}
 
 def upload_to_gcs(local_file_path: str, bucket_name: str, destination_blob_name: str) -> str:
     bucket = storage_client.bucket(bucket_name)
     blob = bucket.blob(destination_blob_name)
     blob.upload_from_filename(local_file_path)
-    os.remove(local_file_path)  # Optional: Remove the local file after upload
-    return blob.public_url  # Return the public URL of the file
+    os.remove(local_file_path) 
+    return blob.public_url
 
 def download_video_from_gcs(video_file_path: str, video_file_name: str):
     bucket = storage_client.bucket(BUCKET_NAME)
@@ -255,7 +253,7 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
     return gcs_video_url
 
 
-# Initialize Flask app
+#initialize flask app
 app = Flask(__name__)
 
 @app.route('/generate_script', methods=['POST'])
