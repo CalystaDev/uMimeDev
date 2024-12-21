@@ -12,10 +12,13 @@ from moviepy.editor import VideoFileClip, TextClip, concatenate_videoclips, Comp
 from flask import Flask, request, jsonify
 import cv2
 import numpy as np
+from concurrent.futures import ThreadPoolExecutor
+import threading
 
 open_ai_api_key = os.getenv("OPEN_AI_API_KEY")
 eleven_labs_api_key = os.getenv("ELEVEN_LABS_API_KEY")
-BUCKET_NAME = 'background-vids'
+BACKGROUND_BUCKET = 'background-vids'
+MIMES_BUCKET = 'mimes'
 VIDEO_FILE_NAME = 'subwaysurfers.mov'
 
 storage_client = storage.Client()
@@ -29,8 +32,8 @@ def upload_to_gcs(local_file_path: str, bucket_name: str, destination_blob_name:
     os.remove(local_file_path) 
     return blob.public_url
 
-def download_video_from_gcs(video_file_path: str, video_file_name: str):
-    bucket = storage_client.bucket(BUCKET_NAME)
+def download_from_gcs(video_file_path: str, video_file_name: str, bucket_name: str):
+    bucket = storage_client.bucket(bucket_name)
     blob = bucket.blob(video_file_name)
     blob.download_to_filename(video_file_path)
     return video_file_path
@@ -72,26 +75,63 @@ def generate_script_from_llm(prompt: str) -> Tuple[List[str], str, str, str]:
     except Exception as e:
         return [], f"An error occurred: {str(e)}", "", ""
 
-def generate_images_from_script(image_prompts: List[str], video_id: str) -> List[str]:
-    image_urls = []
+# def generate_images_from_script(image_prompts: List[str], video_id: str) -> List[str]:
+#     image_urls = []
+#     openai.api_key = open_ai_api_key
+#     for i, prompt in enumerate(image_prompts):
+#         try:
+#             response = openai.Image.create(
+#                 prompt=prompt,
+#                 n=1,
+#                 size="512x512"
+#             )
+#             image_url = response['data'][0]['url']
+#             local_image_path = f"image_{video_id}_{i}.png"
+#             with open(local_image_path, 'wb') as img_file:
+#                 img_file.write(requests.get(image_url).content)
+#             gcs_image_url = upload_to_gcs(local_image_path, BUCKET_NAME, f"{video_id}/images/image_{i}.png")
+#             image_urls.append(gcs_image_url)
+#         except Exception as e:
+#             print(f"Error generating image for prompt '{prompt}': {e}")
+#     return image_urls
+
+
+# Lock to prevent race conditions during GCS uploads
+gcs_lock = threading.Lock()
+
+def generate_single_image(prompt: str, video_id: str, index: int) -> str:
+    """
+    Helper function to generate a single image and upload it to GCS.
+    """
     openai.api_key = open_ai_api_key
-    for i, prompt in enumerate(image_prompts):
-        try:
-            response = openai.Image.create(
-                prompt=prompt,
-                n=1,
-                size="512x512"
-            )
-            image_url = response['data'][0]['url']
-            local_image_path = f"image_{video_id}_{i}.png"
-            with open(local_image_path, 'wb') as img_file:
-                img_file.write(requests.get(image_url).content)
-            # Upload image to GCS
-            gcs_image_url = upload_to_gcs(local_image_path, BUCKET_NAME, f"{video_id}/images/image_{i}.png")
-            image_urls.append(gcs_image_url)
-        except Exception as e:
-            print(f"Error generating image for prompt '{prompt}': {e}")
+    try:
+        response = openai.Image.create(prompt=prompt, n=1, size="512x512")
+        image_url = response['data'][0]['url']
+        
+        local_image_path = f"image_{video_id}_{index}.png"
+        with open(local_image_path, 'wb') as img_file:
+            img_file.write(requests.get(image_url).content)
+        
+        with gcs_lock:
+            gcs_image_url = upload_to_gcs(local_image_path, MIMES_BUCKET, f"{video_id}/images/image_{index}.png")
+        return gcs_image_url
+    except Exception as e:
+        print(f"Error generating image for prompt '{prompt}': {e}")
+        return None
+
+def generate_images_from_script(image_prompts: List[str], video_id: str) -> List[str]:
+    """
+    Generate images concurrently using ThreadPoolExecutor.
+    """
+    image_urls = []
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = [executor.submit(generate_single_image, prompt, video_id, i) for i, prompt in enumerate(image_prompts)]
+        for future in futures:
+            result = future.result()
+            if result:
+                image_urls.append(result)
     return image_urls
+
 
 def generate_audio(script: str, script_with_time_delimiter: str, voice_id: str, video_id: str) -> str:
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/with-timestamps"
@@ -113,7 +153,7 @@ def generate_audio(script: str, script_with_time_delimiter: str, voice_id: str, 
     with open(audio_file_path, 'wb') as f:
         f.write(audio_bytes)
     # Upload audio to GCS
-    gcs_audio_url = upload_to_gcs(audio_file_path, BUCKET_NAME, f"{video_id}/audio/output.mp3")
+    gcs_audio_url = upload_to_gcs(audio_file_path, MIMES_BUCKET, f"{video_id}/audio/output.mp3")
     
     words = []
     curr_word = ''
@@ -197,7 +237,7 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
     print(f"Image URLs: image_urls")
     for i, image_url in enumerate(image_urls):
         print(f"Downloading image {i} from {image_url}")
-        temp_path = download_video_from_gcs(f"/tmp/image_{i}.png", image_url.replace("https://storage.googleapis.com/background-vids/", ""))
+        temp_path = download_from_gcs(f"/tmp/image_{i}.png", image_url.replace("https://storage.googleapis.com/mimes/", ""), 'mimes')
         img = cv2.imread(temp_path)
         if img is None:
             print(f"Error: Could not load image {temp_path}")
@@ -241,7 +281,7 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
 
     final_output = f"final_output_with_audio_{video_id}.mp4"
 
-    audio_path = download_video_from_gcs(f"/tmp/audio.mp3", audio_url.replace("https://storage.googleapis.com/background-vids/", ""))
+    audio_path = download_from_gcs(f"/tmp/audio.mp3", audio_url.replace("https://storage.googleapis.com/mimes/", ""), 'mimes')
     ffmpeg_command = f'ffmpeg -i {output_file} -i {audio_path} -c:v copy -c:a aac {final_output}'
     print(f"Running FFmpeg command: {ffmpeg_command}")
     result = os.system(ffmpeg_command)
@@ -249,7 +289,7 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
     if result != 0:
         raise RuntimeError("Error: FFmpeg command failed.")
 
-    gcs_video_url = upload_to_gcs(output_file, BUCKET_NAME, f"{video_id}/final_video.mp4")
+    gcs_video_url = upload_to_gcs(output_file, MIMES_BUCKET, f"{video_id}/final_video.mp4")
     return gcs_video_url
 
 
@@ -283,17 +323,38 @@ def generate_script():
 
     return jsonify({"video_id": video_id, "title": title, "script": script}), 200
 
+# @app.route('/generate_images/<video_id>', methods=['POST'])
+# def generate_images(video_id):
+#     if video_id not in generation_data:
+#         return jsonify({"error": "Invalid video_id"}), 400
+
+#     data = generation_data[video_id]
+#     image_prompts = data['image_prompts']
+#     image_paths = generate_images_from_script(image_prompts, video_id)
+    
+#     generation_data[video_id]['image_paths'] = image_paths
+#     return jsonify({"message": "Images generated", "image_paths": image_paths}), 200
+
 @app.route('/generate_images/<video_id>', methods=['POST'])
-def generate_images(video_id):
+def generate_images_endpoint(video_id):
+    """
+    HTTPS endpoint to generate images for a given video ID using optimized multithreading.
+    """
     if video_id not in generation_data:
         return jsonify({"error": "Invalid video_id"}), 400
 
+    # Retrieve data for the video ID
     data = generation_data[video_id]
     image_prompts = data['image_prompts']
-    image_paths = generate_images_from_script(image_prompts, video_id)
-    
-    generation_data[video_id]['image_paths'] = image_paths
-    return jsonify({"message": "Images generated", "image_paths": image_paths}), 200
+
+    # Call the optimized function for generating images
+    try:
+        image_paths = generate_images_from_script(image_prompts, video_id)
+        generation_data[video_id]['image_paths'] = image_paths
+        return jsonify({"message": "Images generated successfully", "image_paths": image_paths}), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to generate images: {str(e)}"}), 500
+
 
 @app.route('/generate_audio/<video_id>', methods=['POST'])
 def generate_audio_for_video(video_id):
@@ -319,7 +380,7 @@ def create_video(video_id):
     words = data['words']
     audio_file_path = data['audio_file_path']
     
-    video_path = download_video_from_gcs("/tmp/subwaysurfers.mov", VIDEO_FILE_NAME)
+    video_path = download_from_gcs("/tmp/subwaysurfers.mov", VIDEO_FILE_NAME, 'background-vids')
     final_video_file = create_video_with_audio(video_path, image_paths, words, audio_file_path, video_id)
 
     return jsonify({"message": "Video created successfully", "video_file": final_video_file}), 200
