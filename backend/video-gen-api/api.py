@@ -296,6 +296,24 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
 #initialize flask app
 app = Flask(__name__)
 
+@app.route('/select_background/<video_id>', methods=['POST'])
+def select_background(video_id):
+    data = request.json
+    background_id = data.get('background_id')
+    if not background_id:
+        return jsonify({"error": "Background ID is required"}), 400
+    #@TODO: fix the ID-name mapping
+    background_file_name = f"{background_id}.mp4"
+    try:
+        video_path = download_from_gcs(f"/tmp/{background_file_name}", background_file_name, BACKGROUND_BUCKET)
+        if video_id in generation_data:
+            generation_data[video_id]['background_video_path'] = video_path
+        else:
+            generation_data[video_id] = {'background_video_path': video_path}
+        return jsonify({"message": "Background video selected successfully", "video_path": video_path}), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to select background video: {str(e)}"}), 500
+
 @app.route('/generate_script', methods=['POST'])
 def generate_script():
     data = request.json
@@ -376,14 +394,17 @@ def create_video(video_id):
         return jsonify({"error": "Invalid video_id"}), 400
     
     data = generation_data[video_id]
+    video_path = data['background_video_path']
     image_paths = data['image_paths']
     words = data['words']
     audio_file_path = data['audio_file_path']
-    
-    video_path = download_from_gcs("/tmp/subwaysurfers.mov", VIDEO_FILE_NAME, 'background-vids')
-    final_video_file = create_video_with_audio(video_path, image_paths, words, audio_file_path, video_id)
-
-    return jsonify({"message": "Video created successfully", "video_file": final_video_file}), 200
+    if not video_path or not image_paths or not words or not audio_file_path:
+        return jsonify({"error": "Required data (background video, images, audio, or words) is missing"}), 400
+    try:
+        final_video_file = create_video_with_audio(video_path, image_paths, words, audio_file_path, video_id)
+        return jsonify({"message": "Video created successfully", "video_file": final_video_file}), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to create video: {str(e)}"}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=8080)
