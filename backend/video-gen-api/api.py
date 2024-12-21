@@ -32,8 +32,8 @@ def upload_to_gcs(local_file_path: str, bucket_name: str, destination_blob_name:
     os.remove(local_file_path) 
     return blob.public_url
 
-def download_video_from_gcs(video_file_path: str, video_file_name: str):
-    bucket = storage_client.bucket(BACKGROUND_BUCKET)
+def download_from_gcs(video_file_path: str, video_file_name: str, bucket_name: str):
+    bucket = storage_client.bucket(bucket_name)
     blob = bucket.blob(video_file_name)
     blob.download_to_filename(video_file_path)
     return video_file_path
@@ -237,7 +237,7 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
     print(f"Image URLs: image_urls")
     for i, image_url in enumerate(image_urls):
         print(f"Downloading image {i} from {image_url}")
-        temp_path = download_video_from_gcs(f"/tmp/image_{i}.png", image_url.replace("https://storage.googleapis.com/background-vids/", ""))
+        temp_path = download_from_gcs(f"/tmp/image_{i}.png", image_url.replace("https://storage.googleapis.com/mimes/", ""), 'mimes')
         img = cv2.imread(temp_path)
         if img is None:
             print(f"Error: Could not load image {temp_path}")
@@ -281,7 +281,7 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
 
     final_output = f"final_output_with_audio_{video_id}.mp4"
 
-    audio_path = download_video_from_gcs(f"/tmp/audio.mp3", audio_url.replace("https://storage.googleapis.com/background-vids/", ""))
+    audio_path = download_from_gcs(f"/tmp/audio.mp3", audio_url.replace("https://storage.googleapis.com/mimes/", ""), 'mimes')
     ffmpeg_command = f'ffmpeg -i {output_file} -i {audio_path} -c:v copy -c:a aac {final_output}'
     print(f"Running FFmpeg command: {ffmpeg_command}")
     result = os.system(ffmpeg_command)
@@ -380,7 +380,7 @@ def create_video(video_id):
     words = data['words']
     audio_file_path = data['audio_file_path']
     
-    video_path = download_video_from_gcs("/tmp/subwaysurfers.mov", VIDEO_FILE_NAME)
+    video_path = download_from_gcs("/tmp/subwaysurfers.mov", VIDEO_FILE_NAME, 'background-vids')
     final_video_file = create_video_with_audio(video_path, image_paths, words, audio_file_path, video_id)
 
     return jsonify({"message": "Video created successfully", "video_file": final_video_file}), 200
