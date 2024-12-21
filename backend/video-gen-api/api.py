@@ -17,7 +17,8 @@ import threading
 
 open_ai_api_key = os.getenv("OPEN_AI_API_KEY")
 eleven_labs_api_key = os.getenv("ELEVEN_LABS_API_KEY")
-BUCKET_NAME = 'background-vids'
+BACKGROUND_BUCKET = 'background-vids'
+MIMES_BUCKET = 'mimes'
 VIDEO_FILE_NAME = 'subwaysurfers.mov'
 
 storage_client = storage.Client()
@@ -32,7 +33,7 @@ def upload_to_gcs(local_file_path: str, bucket_name: str, destination_blob_name:
     return blob.public_url
 
 def download_video_from_gcs(video_file_path: str, video_file_name: str):
-    bucket = storage_client.bucket(BUCKET_NAME)
+    bucket = storage_client.bucket(BACKGROUND_BUCKET)
     blob = bucket.blob(video_file_name)
     blob.download_to_filename(video_file_path)
     return video_file_path
@@ -112,7 +113,7 @@ def generate_single_image(prompt: str, video_id: str, index: int) -> str:
             img_file.write(requests.get(image_url).content)
         
         with gcs_lock:
-            gcs_image_url = upload_to_gcs(local_image_path, BUCKET_NAME, f"{video_id}/images/image_{index}.png")
+            gcs_image_url = upload_to_gcs(local_image_path, MIMES_BUCKET, f"{video_id}/images/image_{index}.png")
         return gcs_image_url
     except Exception as e:
         print(f"Error generating image for prompt '{prompt}': {e}")
@@ -152,7 +153,7 @@ def generate_audio(script: str, script_with_time_delimiter: str, voice_id: str, 
     with open(audio_file_path, 'wb') as f:
         f.write(audio_bytes)
     # Upload audio to GCS
-    gcs_audio_url = upload_to_gcs(audio_file_path, BUCKET_NAME, f"{video_id}/audio/output.mp3")
+    gcs_audio_url = upload_to_gcs(audio_file_path, MIMES_BUCKET, f"{video_id}/audio/output.mp3")
     
     words = []
     curr_word = ''
@@ -288,7 +289,7 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
     if result != 0:
         raise RuntimeError("Error: FFmpeg command failed.")
 
-    gcs_video_url = upload_to_gcs(output_file, BUCKET_NAME, f"{video_id}/final_video.mp4")
+    gcs_video_url = upload_to_gcs(output_file, MIMES_BUCKET, f"{video_id}/final_video.mp4")
     return gcs_video_url
 
 
