@@ -14,6 +14,7 @@ import cv2
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 import threading
+import subprocess
 
 open_ai_api_key = os.getenv("OPEN_AI_API_KEY")
 eleven_labs_api_key = os.getenv("ELEVEN_LABS_API_KEY")
@@ -220,7 +221,10 @@ def read_image_from_url(url):
     if response.status_code == 200:
         img_array = np.asarray(bytearray(response.content), dtype=np.uint8)
         image = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+        if image.shape[2] == 4:  # Check if the image has an alpha channel
+            image = cv2.cvtColor(image, cv2.COLOR_BGRA2BGR)
         return image
+        # return image
     else:
         raise ValueError(f"Failed to fetch image from URL: {url}, status code: {response.status_code}")
 
@@ -245,6 +249,13 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
 
     print(f"Number of overlay images loaded: {len(overlay_images)}")
 
+    image_end_times = [words[i - 1][2] + 1 for i, word in enumerate(words) if word[0] == "$"]
+    # image_durations = [
+    #     (overlay_images[i], start, end)
+    #     for i, (start, end) in enumerate([(words[i - 1][2], words[i][2]) for i, word in enumerate(words) if word[0] == "$"])
+    # ]
+    # print(f"Image durations: {image_durations}")
+
     font = cv2.FONT_HERSHEY_SIMPLEX
     font_scale = 2
     font_color = (255, 255, 255)
@@ -261,16 +272,37 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
             print(f"Warning: Empty frame at {frame_idx}")
             continue
 
+        # Overlay the corresponding image
+        for i, img in enumerate(overlay_images):
+            # print(img)
+            start = 0 if i == 0 else image_end_times[i - 1]
+            end = image_end_times[i] if i != len(image_end_times) - 1 else int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) / fps
+            # print(f"Start {start}")
+            # print(f"End {end}")
+            # print(f"Curr {frame_idx / fps}")
+            if start <= frame_idx / fps <= end:
+                img_resized = cv2.resize(img, (width, height // 2))
+                
+                top_half_frame = frame[0:height // 2, 0:width]
+
+                alpha = 1  # Adjust blending factor as needed
+                top_half_frame = cv2.addWeighted(top_half_frame, 0, img_resized, 1, 0)
+                frame[0:height // 2, 0:width] = top_half_frame
+                # frame = cv2.addWeighted(frame, 1 - alpha, img_resized, alpha, 0)
+                break  # Only one image overlay per frame
+
         for i, (text, start, end) in enumerate(words):
             if text == '$':
                 continue
             if start <= frame_idx / fps <= end:
-                print(f"Adding text '{text}' at frame {frame_idx}")
-                cv2.putText(frame, text, (50, 50), font, font_scale, font_color, thickness, cv2.LINE_AA)
-                if i < len(overlay_images):
-                    img = cv2.resize(overlay_images[i], (width, height))
-                    alpha = 0.6
-                    frame = cv2.addWeighted(frame, 1 - alpha, img, alpha, 0)
+                # print(f"Adding text '{text}' at frame {frame_idx}")
+                (text_width, text_height), baseline = cv2.getTextSize(text, font, font_scale, thickness)
+                # Calculate the center position
+                center_x = (width - text_width) // 2  # Horizontal center
+                center_y = (height + text_height) // 2  # Vertical center
+
+                # Put the text at the calculated position
+                cv2.putText(frame, text, (center_x, center_y), font, font_scale, font_color, thickness, cv2.LINE_AA)            
         out.write(frame)
         frame_idx += 1
     cap.release()
@@ -282,14 +314,34 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
     final_output = f"final_output_with_audio_{video_id}.mp4"
 
     audio_path = download_from_gcs(f"/tmp/audio.mp3", audio_url.replace("https://storage.googleapis.com/mimes/", ""), 'mimes')
-    ffmpeg_command = f'ffmpeg -i {output_file} -i {audio_path} -c:v copy -c:a aac {final_output}'
-    print(f"Running FFmpeg command: {ffmpeg_command}")
-    result = os.system(ffmpeg_command)
+    if not os.path.exists(audio_path):
+        raise RuntimeError(f"Error: Audio file {audio_path} not found.")
 
-    if result != 0:
+    # Use subprocess to run the ffmpeg command to combine video and audio
+    ffmpeg_command = [
+        'ffmpeg',
+        '-i', output_file,    # Input video file
+        '-i', audio_path,     # Input audio file
+        '-c:v', 'copy',       # Copy the video stream without re-encoding
+        '-c:a', 'aac',        # Encode audio to AAC format
+        '-strict', 'experimental',  # Allow experimental codecs if necessary
+        '-shortest',
+        final_output          # Output file
+    ]
+
+    print(f"Running FFmpeg command: {' '.join(ffmpeg_command)}")
+
+    # Execute FFmpeg command
+    result = subprocess.run(ffmpeg_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    
+    if result.returncode != 0:
+        print(f"FFmpeg error: {result.stderr.decode()}")
         raise RuntimeError("Error: FFmpeg command failed.")
+    else:
+        print("Video and audio successfully combined.")
 
-    gcs_video_url = upload_to_gcs(output_file, MIMES_BUCKET, f"{video_id}/final_video.mp4")
+    # Upload the final video with audio to GCS
+    gcs_video_url = upload_to_gcs(final_output, MIMES_BUCKET, f"{video_id}/final_video.mp4")
     return gcs_video_url
 
 
