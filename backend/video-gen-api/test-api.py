@@ -4,8 +4,8 @@ import requests
 BASE_URL = "https://apiacc-1010927570704.us-east1.run.app"
 
 # Example data for testing
-test_prompt = "how to make brownies"
-test_voice_id = "jsCqWAovK2LkecY7zXl4"  # Replace with the actual voice ID if needed
+test_prompt = "Wish me a merry christmas"
+test_voice_id = "2EiwWnXFnvU5JabPnv8n"  # Replace with the actual voice ID if needed
 
 def test_generate_script():
     url = f"{BASE_URL}/generate_script"
