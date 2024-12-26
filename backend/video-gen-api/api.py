@@ -265,7 +265,7 @@ def apply_smooth_ken_burns(image, frame_idx, total_frames, start_scale=1.0, end_
 
     return smooth_image
 
-def create_video_with_audio(video_path: str, image_urls: list, words: list, audio_url: str, video_id: str):
+def create_video_with_audio(video_path: str, image_urls: list, words: list, audio_url: str, video_id: str, background_music_path: str):
     cap = cv2.VideoCapture(video_path)
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -359,28 +359,39 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
     if not os.path.exists(audio_path):
         raise RuntimeError(f"Error: Audio file {audio_path} not found.")
 
-    # Use subprocess to run the ffmpeg command to combine video and audio
+    # Use subprocess to run the ffmpeg command to re-encode video and combine with audio
     ffmpeg_command = [
         'ffmpeg',
-        '-i', output_file,    # Input video file
-        '-i', audio_path,     # Input audio file
-        '-c:v', 'copy',       # Copy the video stream without re-encoding
-        '-c:a', 'aac',        # Encode audio to AAC format
-        '-strict', 'experimental',  # Allow experimental codecs if necessary
-        '-shortest',
-        final_output          # Output file
+        '-i', output_file,          # Input video file
+        '-i', audio_path,           # Input primary audio file
+        '-i', background_music_path,  # Input background music file
+        '-filter_complex', (
+            "[1:a]volume=2[a1];"    # Reduce primary audio volume to 50%
+            "[2:a]volume=0.25[a2];"    # Increase background music volume to 150%
+            "[a1][a2]amix=inputs=2:duration=first:dropout_transition=2[a]"  # Mix the two audio streams
+        ),
+        '-map', '0:v',               # Map video from the video file
+        '-map', '[a]',               # Map mixed audio
+        '-c:v', 'libx264',           # Re-encode video with H.264 codec
+        '-preset', 'fast',           # Use a faster encoding preset for efficiency
+        '-crf', '23',                # Set quality for video
+        '-c:a', 'aac',               # Re-encode audio with AAC codec
+        '-b:a', '192k',              # Set audio bitrate for good quality
+        '-movflags', '+faststart',   # Optimize for web streaming
+        '-shortest',                 # Ensure the output duration matches the shortest input
+        final_output                 # Output file
     ]
 
     print(f"Running FFmpeg command: {' '.join(ffmpeg_command)}")
 
     # Execute FFmpeg command
     result = subprocess.run(ffmpeg_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    
+
     if result.returncode != 0:
         print(f"FFmpeg error: {result.stderr.decode()}")
         raise RuntimeError("Error: FFmpeg command failed.")
     else:
-        print("Video and audio successfully combined.")
+        print("Video successfully re-encoded and audio combined.")
 
     # Upload the final video with audio to GCS
     gcs_video_url = upload_to_gcs(final_output, MIMES_BUCKET, f"{video_id}/final_video.mp4")
@@ -477,7 +488,8 @@ def create_video(video_id):
     audio_file_path = data['audio_file_path']
     
     video_path = download_from_gcs("/tmp/subwaysurfers.mov", VIDEO_FILE_NAME, 'background-vids')
-    final_video_file = create_video_with_audio(video_path, image_paths, words, audio_file_path, video_id)
+    background_music_path = download_from_gcs("/tmp/background-music.mp3", "christmas-spirit.mp3", 'background_music_bucket')
+    final_video_file = create_video_with_audio(video_path, image_paths, words, audio_file_path, video_id, background_music_path)
 
     return jsonify({"message": "Video created successfully", "video_file": final_video_file}), 200
 
