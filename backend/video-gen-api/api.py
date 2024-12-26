@@ -303,7 +303,7 @@ def select_background(video_id):
     if not background_id:
         return jsonify({"error": "Background ID is required"}), 400
     #@TODO: fix the ID-name mapping
-    background_file_name = f"{background_id}.mp4"
+    background_file_name = f"{background_id}"
     try:
         video_path = download_from_gcs(f"/tmp/{background_file_name}", background_file_name, BACKGROUND_BUCKET)
         if video_id in generation_data:
