@@ -10,6 +10,7 @@ from prompts import prompts
 from google.cloud import storage
 from moviepy.editor import VideoFileClip, TextClip, concatenate_videoclips, CompositeVideoClip, AudioFileClip
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import cv2
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
@@ -400,6 +401,7 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
 
 #initialize flask app
 app = Flask(__name__)
+CORS(app)
 
 @app.route('/generate_script', methods=['POST'])
 def generate_script():
