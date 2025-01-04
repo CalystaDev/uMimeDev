@@ -6,7 +6,7 @@ BASE_URL = "https://videogenapi-410774176567.us-east1.run.app"
 # Example data for testing
 test_prompt = "how to make a coke flaot"
 test_voice_id = "2EiwWnXFnvU5JabPnv8n"
-background_id = "gta.mov"
+background_id = "minecraft"
 music_id = "inspirational"
 
 

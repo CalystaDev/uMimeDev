@@ -22,8 +22,6 @@ eleven_labs_api_key = os.getenv("ELEVEN_LABS_API_KEY")
 BACKGROUND_BUCKET = 'backgroundvids'
 MIMES_BUCKET = 'final-mimes'
 MUSIC_BUCKET = 'backgroundmusicbucket'
-VIDEO_FILE_NAME = 'subwaysurfers.mov'
-
 storage_client = storage.Client()
 
 generation_data = {}
@@ -427,7 +425,7 @@ def select_background(video_id):
     if not background_id:
         return jsonify({"error": "Background ID is required"}), 400
     #@TODO: fix the ID-name mapping
-    background_file_name = f"{background_id}"
+    background_file_name = f"{background_id}.mov"
     try:
         video_path = download_from_gcs(f"/tmp/{background_file_name}", background_file_name, BACKGROUND_BUCKET)
         if video_id in generation_data:
