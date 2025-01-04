@@ -19,8 +19,8 @@ import subprocess
 
 open_ai_api_key = os.getenv("OPEN_AI_API_KEY")
 eleven_labs_api_key = os.getenv("ELEVEN_LABS_API_KEY")
-BACKGROUND_BUCKET = 'background-vids'
-MIMES_BUCKET = 'mimes'
+BACKGROUND_BUCKET = 'backgroundvids'
+MIMES_BUCKET = 'final-mimes'
 VIDEO_FILE_NAME = 'subwaysurfers.mov'
 
 storage_client = storage.Client()
@@ -279,7 +279,7 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
     print(f"Image URLs: image_urls")
     for i, image_url in enumerate(image_urls):
         print(f"Downloading image {i} from {image_url}")
-        temp_path = download_from_gcs(f"/tmp/image_{i}.png", image_url.replace("https://storage.googleapis.com/mimes/", ""), 'mimes')
+        temp_path = download_from_gcs(f"/tmp/image_{i}.png", image_url.replace("https://storage.googleapis.com/final-mimes/", ""), 'final-mimes')
         img = cv2.imread(temp_path)
         if img is None:
             print(f"Error: Could not load image {temp_path}")
@@ -356,7 +356,7 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
 
     final_output = f"final_output_with_audio_{video_id}.mp4"
     
-    audio_path = download_from_gcs(f"/tmp/audio.mp3", audio_url.replace("https://storage.googleapis.com/mimes/", ""), 'mimes')
+    audio_path = download_from_gcs(f"/tmp/audio.mp3", audio_url.replace("https://storage.googleapis.com/final-mimes/", ""), 'final-mimes')
     if not os.path.exists(audio_path):
         raise RuntimeError(f"Error: Audio file {audio_path} not found.")
 
@@ -505,8 +505,8 @@ def create_video(video_id):
     words = data['words']
     audio_file_path = data['audio_file_path']
     
-    video_path = download_from_gcs("/tmp/subwaysurfers.mov", VIDEO_FILE_NAME, 'background-vids')
-    background_music_path = download_from_gcs("/tmp/background-music.mp3", "christmas-spirit.mp3", 'background_music_bucket')
+    video_path = download_from_gcs("/tmp/subwaysurfers.mov", VIDEO_FILE_NAME, 'backgroundvids')
+    background_music_path = download_from_gcs("/tmp/background-music.mp3", "christmas-spirit.mp3", 'backgroundmusicbucket')
     # final_video_file = create_video_with_audio(video_path, image_paths, words, audio_file_path, video_id, background_music_path)
     final_video_file = create_video_with_audio(video_path, image_paths, words, audio_file_path, video_id)
 

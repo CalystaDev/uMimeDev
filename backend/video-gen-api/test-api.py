@@ -1,10 +1,10 @@
 import requests
 
 # Set the base URL of your Cloud Run service
-BASE_URL = "https://apiacc-1010927570704.us-east1.run.app"
+BASE_URL = "https://videogenapi-410774176567.us-east1.run.app"
 
 # Example data for testing
-test_prompt = "How do i wrap christmas presents."
+test_prompt = "how to make a cocktail"
 test_voice_id = "2EiwWnXFnvU5JabPnv8n"  # Replace with the actual voice ID if needed
 
 def test_generate_script():
