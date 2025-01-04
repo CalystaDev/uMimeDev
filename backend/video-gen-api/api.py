@@ -10,15 +10,17 @@ from prompts import prompts
 from google.cloud import storage
 from moviepy.editor import VideoFileClip, TextClip, concatenate_videoclips, CompositeVideoClip, AudioFileClip
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import cv2
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 import threading
+import subprocess
 
 open_ai_api_key = os.getenv("OPEN_AI_API_KEY")
 eleven_labs_api_key = os.getenv("ELEVEN_LABS_API_KEY")
-BACKGROUND_BUCKET = 'background-vids'
-MIMES_BUCKET = 'mimes'
+BACKGROUND_BUCKET = 'backgroundvids'
+MIMES_BUCKET = 'final-mimes'
 VIDEO_FILE_NAME = 'subwaysurfers.mov'
 
 storage_client = storage.Client()
@@ -220,24 +222,64 @@ def read_image_from_url(url):
     if response.status_code == 200:
         img_array = np.asarray(bytearray(response.content), dtype=np.uint8)
         image = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+        if image.shape[2] == 4:  # Check if the image has an alpha channel
+            image = cv2.cvtColor(image, cv2.COLOR_BGRA2BGR)
         return image
+        # return image
     else:
         raise ValueError(f"Failed to fetch image from URL: {url}, status code: {response.status_code}")
 
-def create_video_with_audio(video_path: str, image_urls: list, words: list, audio_url: str, video_id: str):
+def apply_smooth_ken_burns(image, frame_idx, total_frames, start_scale=1.0, end_scale=1.2):
+    """
+    Apply a smooth Ken Burns effect (zoom-in) to an image.
+
+    Args:
+        image: The input image (numpy array).
+        frame_idx: The current frame index.
+        total_frames: The total number of frames for the zoom effect.
+        start_scale: Initial scale factor.
+        end_scale: Final scale factor.
+
+    Returns:
+        The transformed image for the current frame.
+    """
+    # Calculate the current scale factor
+    scale = start_scale + (end_scale - start_scale) * (frame_idx / total_frames)
+    
+    # Get the original dimensions
+    h, w = image.shape[:2]
+    
+    # Calculate the center crop dimensions
+    center_x, center_y = w // 2, h // 2
+    crop_w = int(w / scale)
+    crop_h = int(h / scale)
+    
+    # Calculate cropping box
+    x1 = max(0, center_x - crop_w // 2)
+    y1 = max(0, center_y - crop_h // 2)
+    x2 = x1 + crop_w
+    y2 = y1 + crop_h
+
+    # Crop and resize the image
+    cropped_image = image[y1:y2, x1:x2]
+    smooth_image = cv2.resize(cropped_image, (w, h), interpolation=cv2.INTER_CUBIC)
+
+    return smooth_image
+
+def create_video_with_audio(video_path: str, image_urls: list, words: list, audio_url: str, video_id: str, background_music_path: str = None):
     cap = cv2.VideoCapture(video_path)
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = cap.get(cv2.CAP_PROP_FPS)
     output_file = f"final_video_with_audio_{video_id}.mp4"
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(output_file, fourcc, fps, (width, height))
+    out = cv2.VideoWriter(output_file, fourcc, fps * 2, (width, height))
 
     overlay_images = []
     print(f"Image URLs: image_urls")
     for i, image_url in enumerate(image_urls):
         print(f"Downloading image {i} from {image_url}")
-        temp_path = download_from_gcs(f"/tmp/image_{i}.png", image_url.replace("https://storage.googleapis.com/mimes/", ""), 'mimes')
+        temp_path = download_from_gcs(f"/tmp/image_{i}.png", image_url.replace("https://storage.googleapis.com/final-mimes/", ""), 'final-mimes')
         img = cv2.imread(temp_path)
         if img is None:
             print(f"Error: Could not load image {temp_path}")
@@ -245,10 +287,19 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
 
     print(f"Number of overlay images loaded: {len(overlay_images)}")
 
+    image_end_times = [words[i - 1][2] + 1 for i, word in enumerate(words) if word[0] == "$"]
+    # image_durations = [
+    #     (overlay_images[i], start, end)
+    #     for i, (start, end) in enumerate([(words[i - 1][2], words[i][2]) for i, word in enumerate(words) if word[0] == "$"])
+    # ]
+    # print(f"Image durations: {image_durations}")
+
     font = cv2.FONT_HERSHEY_SIMPLEX
     font_scale = 2
-    font_color = (255, 255, 255)
-    thickness = 2
+    font_color = (255, 255, 255)  # White text
+    outline_color = (0, 0, 0)     # Black outline
+    thickness = 8                 # Thickness for the main text
+    outline_thickness = 14         # Thickness for the outline
 
     frame_idx = 0
     while cap.isOpened():
@@ -261,18 +312,42 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
             print(f"Warning: Empty frame at {frame_idx}")
             continue
 
-        for i, (text, start, end) in enumerate(words):
-            if text == '$':
-                continue
-            if start <= frame_idx / fps <= end:
-                print(f"Adding text '{text}' at frame {frame_idx}")
-                cv2.putText(frame, text, (50, 50), font, font_scale, font_color, thickness, cv2.LINE_AA)
-                if i < len(overlay_images):
-                    img = cv2.resize(overlay_images[i], (width, height))
-                    alpha = 0.6
-                    frame = cv2.addWeighted(frame, 1 - alpha, img, alpha, 0)
-        out.write(frame)
-        frame_idx += 1
+        # Overlay the corresponding image
+        for _ in range(2):
+            for i, img in enumerate(overlay_images):
+                start = 0 if i == 0 else image_end_times[i - 1]
+                end = image_end_times[i] if i != len(image_end_times) - 1 else int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) / (fps)
+
+                # Adjust timing for doubled FPS
+                if start <= frame_idx / (fps * 2) <= end:
+                    total_frames = int((end - start) * fps * 2)
+                    ken_burns_frame_idx = int((frame_idx / (fps * 2) - start) * (fps * 2))
+
+                    img_resized = cv2.resize(img, (width, height // 2))
+                    ken_burns_image = apply_smooth_ken_burns(img_resized, ken_burns_frame_idx, total_frames)
+
+                    top_half_frame = frame[0:height // 2, 0:width]
+                    top_half_frame = cv2.addWeighted(top_half_frame, 0, ken_burns_image, 1, 0)
+                    frame[0:height // 2, 0:width] = top_half_frame
+                    break
+
+            for i, (text, start, end) in enumerate(words):
+                if text == '$':
+                    continue
+                if start <= frame_idx / (fps * 2) <= end:
+                    # text = text.replace("\n\n", "")
+                    # text = text.replace("—", "")
+                    # print(f"Adding text '{text}' at frame {frame_idx}")
+                    (text_width, text_height), baseline = cv2.getTextSize(text, font, font_scale, thickness)
+                    # Calculate the center position
+                    center_x = (width - text_width) // 2  # Horizontal center
+                    center_y = (height + text_height) // 2  # Vertical center
+
+                    cv2.putText(frame, text, (center_x, center_y), font, font_scale, outline_color, outline_thickness, cv2.LINE_AA)
+                    cv2.putText(frame, text, (center_x, center_y), font, font_scale, font_color, thickness, cv2.LINE_AA)           
+                     
+            out.write(frame)
+            frame_idx += 1
     cap.release()
     out.release()
 
@@ -280,21 +355,69 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
         raise RuntimeError(f"Error: Output video {output_file} was not created.")
 
     final_output = f"final_output_with_audio_{video_id}.mp4"
+    
+    audio_path = download_from_gcs(f"/tmp/audio.mp3", audio_url.replace("https://storage.googleapis.com/final-mimes/", ""), 'final-mimes')
+    if not os.path.exists(audio_path):
+        raise RuntimeError(f"Error: Audio file {audio_path} not found.")
 
-    audio_path = download_from_gcs(f"/tmp/audio.mp3", audio_url.replace("https://storage.googleapis.com/mimes/", ""), 'mimes')
-    ffmpeg_command = f'ffmpeg -i {output_file} -i {audio_path} -c:v copy -c:a aac {final_output}'
-    print(f"Running FFmpeg command: {ffmpeg_command}")
-    result = os.system(ffmpeg_command)
+    if background_music_path:
+        # Use subprocess to run the ffmpeg command to re-encode video and combine with audio
+        ffmpeg_command = [
+            'ffmpeg',
+            '-i', output_file,          # Input video file
+            '-i', audio_path,           # Input primary audio file
+            '-i', background_music_path,  # Input background music file
+            '-filter_complex', (
+                "[1:a]volume=2[a1];"    # Reduce primary audio volume to 50%
+                "[2:a]volume=0.25[a2];"    # Increase background music volume to 150%
+                "[a1][a2]amix=inputs=2:duration=first:dropout_transition=2[a]"  # Mix the two audio streams
+            ),
+            '-map', '0:v',               # Map video from the video file
+            '-map', '[a]',               # Map mixed audio
+            '-c:v', 'libx264',           # Re-encode video with H.264 codec
+            '-preset', 'fast',           # Use a faster encoding preset for efficiency
+            '-crf', '23',                # Set quality for video
+            '-c:a', 'aac',               # Re-encode audio with AAC codec
+            '-b:a', '192k',              # Set audio bitrate for good quality
+            '-movflags', '+faststart',   # Optimize for web streaming
+            '-shortest',                 # Ensure the output duration matches the shortest input
+            final_output                 # Output file
+        ]
+    else:
+        # Use subprocess to run the ffmpeg command to re-encode video and combine with audio
+        ffmpeg_command = [
+            'ffmpeg',
+            '-i', output_file,       # Input video file
+            '-i', audio_path,        # Input audio file
+            '-c:v', 'libx264',       # Re-encode video with H.264 codec
+            '-preset', 'fast',       # Use a faster encoding preset for efficiency
+            '-crf', '23',            # Set quality (lower is better; 23 is default for H.264)
+            '-c:a', 'aac',           # Re-encode audio with AAC codec
+            '-b:a', '192k',          # Set audio bitrate for good quality
+            '-movflags', '+faststart',  # Optimize for web streaming
+            '-shortest',             # Ensure the output duration matches the shortest input
+            final_output             # Output file
+        ]
 
-    if result != 0:
+    print(f"Running FFmpeg command: {' '.join(ffmpeg_command)}")
+
+    # Execute FFmpeg command
+    result = subprocess.run(ffmpeg_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+    if result.returncode != 0:
+        print(f"FFmpeg error: {result.stderr.decode()}")
         raise RuntimeError("Error: FFmpeg command failed.")
+    else:
+        print("Video successfully re-encoded and audio combined.")
 
-    gcs_video_url = upload_to_gcs(output_file, MIMES_BUCKET, f"{video_id}/final_video.mp4")
+    # Upload the final video with audio to GCS
+    gcs_video_url = upload_to_gcs(final_output, MIMES_BUCKET, f"{video_id}/final_video.mp4")
     return gcs_video_url
 
 
 #initialize flask app
 app = Flask(__name__)
+CORS(app)
 
 @app.route('/select_background/<video_id>', methods=['POST'])
 def select_background(video_id):
@@ -380,9 +503,11 @@ def generate_audio_for_video(video_id):
         return jsonify({"error": "Invalid video_id"}), 400
 
     data = generation_data[video_id]
-    script = data['script']
-    script_with_dollars = data['script_with_dollars']
-    audio_file_path, _, words = generate_audio(script, script_with_dollars, "jsCqWAovK2LkecY7zXl4", video_id)
+    script = data['script'].replace("\n", " ").replace("—", "-").replace("#", "")
+    script_with_dollars = data['script_with_dollars'].replace("\n", " ").replace("—", "-").replace("#", "")
+    print(f"Script: {script}")
+    print(f"Script w $: {script_with_dollars}")
+    audio_file_path, _, words = generate_audio(script, script_with_dollars, "2EiwWnXFnvU5JabPnv8n", video_id)
     generation_data[video_id]['audio_file_path'] = audio_file_path
     generation_data[video_id]['words'] = words
 
@@ -398,6 +523,7 @@ def create_video(video_id):
     image_paths = data['image_paths']
     words = data['words']
     audio_file_path = data['audio_file_path']
+    
     if not video_path or not image_paths or not words or not audio_file_path:
         return jsonify({"error": "Required data (background video, images, audio, or words) is missing"}), 400
     try:
@@ -405,6 +531,7 @@ def create_video(video_id):
         return jsonify({"message": "Video created successfully", "video_file": final_video_file}), 200
     except Exception as e:
         return jsonify({"error": f"Failed to create video: {str(e)}"}), 500
+
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=8080)

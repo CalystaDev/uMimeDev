@@ -1,10 +1,12 @@
 import requests
-BASE_URL = "https://bgtest-1010927570704.us-east1.run.app"
+
+# Set the base URL of your Cloud Run service
+BASE_URL = "https://videogenapi-410774176567.us-east1.run.app"
 
 # Example data for testing
-test_prompt = "how to make brownies"
-test_voice_id = "jsCqWAovK2LkecY7zXl4"
-background_id = "minecraft.mov"
+test_prompt = "how to make a cocktail"
+test_voice_id = "2EiwWnXFnvU5JabPnv8n"
+background_id = "minecraft.mov" #background video id
 
 def test_generate_script():
     url = f"{BASE_URL}/generate_script"
