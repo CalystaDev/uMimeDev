@@ -4,7 +4,7 @@ import requests
 BASE_URL = "https://videogenapi-410774176567.us-east1.run.app"
 
 # Example data for testing
-test_prompt = "how to make a cocktail"
+test_prompt = "how to make a vision board"
 test_voice_id = "2EiwWnXFnvU5JabPnv8n"
 background_id = "minecraft.mov" #background video id
 

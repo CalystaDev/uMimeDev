@@ -437,8 +437,12 @@ def select_background(video_id):
     except Exception as e:
         return jsonify({"error": f"Failed to select background video: {str(e)}"}), 500
 
+#TIME ENDPOINTS
+import time
+
 @app.route('/generate_script', methods=['POST'])
 def generate_script():
+    start_time = time.time()  # Record start time
     data = request.json
     prompt = data.get('prompt')
     voice_id = data.get('voice_id')
@@ -461,44 +465,33 @@ def generate_script():
     }
     
     print(generation_data[video_id])
-
+    end_time = time.time()  # Record end time
+    print(f"'generate_script' endpoint took {end_time - start_time:.2f} seconds")
     return jsonify({"video_id": video_id, "title": title, "script": script}), 200
-
-# @app.route('/generate_images/<video_id>', methods=['POST'])
-# def generate_images(video_id):
-#     if video_id not in generation_data:
-#         return jsonify({"error": "Invalid video_id"}), 400
-
-#     data = generation_data[video_id]
-#     image_prompts = data['image_prompts']
-#     image_paths = generate_images_from_script(image_prompts, video_id)
-    
-#     generation_data[video_id]['image_paths'] = image_paths
-#     return jsonify({"message": "Images generated", "image_paths": image_paths}), 200
 
 @app.route('/generate_images/<video_id>', methods=['POST'])
 def generate_images_endpoint(video_id):
-    """
-    HTTPS endpoint to generate images for a given video ID using optimized multithreading.
-    """
+    start_time = time.time()
     if video_id not in generation_data:
         return jsonify({"error": "Invalid video_id"}), 400
 
-    # Retrieve data for the video ID
     data = generation_data[video_id]
     image_prompts = data['image_prompts']
 
-    # Call the optimized function for generating images
     try:
         image_paths = generate_images_from_script(image_prompts, video_id)
         generation_data[video_id]['image_paths'] = image_paths
+        end_time = time.time()
+        print(f"'generate_images' endpoint took {end_time - start_time:.2f} seconds")
         return jsonify({"message": "Images generated successfully", "image_paths": image_paths}), 200
     except Exception as e:
+        end_time = time.time()
+        print(f"'generate_images' endpoint failed after {end_time - start_time:.2f} seconds")
         return jsonify({"error": f"Failed to generate images: {str(e)}"}), 500
-
 
 @app.route('/generate_audio/<video_id>', methods=['POST'])
 def generate_audio_for_video(video_id):
+    start_time = time.time()
     if video_id not in generation_data:
         return jsonify({"error": "Invalid video_id"}), 400
 
@@ -507,14 +500,21 @@ def generate_audio_for_video(video_id):
     script_with_dollars = data['script_with_dollars'].replace("\n", " ").replace("—", "-").replace("#", "")
     print(f"Script: {script}")
     print(f"Script w $: {script_with_dollars}")
-    audio_file_path, _, words = generate_audio(script, script_with_dollars, "2EiwWnXFnvU5JabPnv8n", video_id)
-    generation_data[video_id]['audio_file_path'] = audio_file_path
-    generation_data[video_id]['words'] = words
-
-    return jsonify({"message": "Audio generated", "audio_file": audio_file_path}), 200
+    try:
+        audio_file_path, _, words = generate_audio(script, script_with_dollars, "2EiwWnXFnvU5JabPnv8n", video_id)
+        generation_data[video_id]['audio_file_path'] = audio_file_path
+        generation_data[video_id]['words'] = words
+        end_time = time.time()
+        print(f"'generate_audio' endpoint took {end_time - start_time:.2f} seconds")
+        return jsonify({"message": "Audio generated", "audio_file": audio_file_path}), 200
+    except Exception as e:
+        end_time = time.time()
+        print(f"'generate_audio' endpoint failed after {end_time - start_time:.2f} seconds")
+        return jsonify({"error": f"Failed to generate audio: {str(e)}"}), 500
 
 @app.route('/create_video/<video_id>', methods=['POST'])
 def create_video(video_id):
+    start_time = time.time()
     if video_id not in generation_data:
         return jsonify({"error": "Invalid video_id"}), 400
     
@@ -528,9 +528,14 @@ def create_video(video_id):
         return jsonify({"error": "Required data (background video, images, audio, or words) is missing"}), 400
     try:
         final_video_file = create_video_with_audio(video_path, image_paths, words, audio_file_path, video_id)
+        end_time = time.time()
+        print(f"'create_video' endpoint took {end_time - start_time:.2f} seconds")
         return jsonify({"message": "Video created successfully", "video_file": final_video_file}), 200
     except Exception as e:
+        end_time = time.time()
+        print(f"'create_video' endpoint failed after {end_time - start_time:.2f} seconds")
         return jsonify({"error": f"Failed to create video: {str(e)}"}), 500
+
 
 
 if __name__ == '__main__':
