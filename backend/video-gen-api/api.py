@@ -21,6 +21,7 @@ open_ai_api_key = os.getenv("OPEN_AI_API_KEY")
 eleven_labs_api_key = os.getenv("ELEVEN_LABS_API_KEY")
 BACKGROUND_BUCKET = 'backgroundvids'
 MIMES_BUCKET = 'final-mimes'
+MUSIC_BUCKET = 'backgroundmusicbucket'
 VIDEO_FILE_NAME = 'subwaysurfers.mov'
 
 storage_client = storage.Client()
@@ -266,7 +267,7 @@ def apply_smooth_ken_burns(image, frame_idx, total_frames, start_scale=1.0, end_
 
     return smooth_image
 
-def create_video_with_audio(video_path: str, image_urls: list, words: list, audio_url: str, video_id: str, background_music_path: str = None):
+def create_video_with_audio(video_path: str, image_urls: list, words: list, audio_url: str, video_id: str, background_music_path):
     cap = cv2.VideoCapture(video_path)
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -437,6 +438,31 @@ def select_background(video_id):
     except Exception as e:
         return jsonify({"error": f"Failed to select background video: {str(e)}"}), 500
 
+
+@app.route('/select_background_music/<video_id>', methods=['POST'])
+def select_background_music(video_id):
+    data = request.json
+    music_id = data.get('music_id')
+    if not music_id:
+        return jsonify({"error": "Music ID is required"}), 400
+    if music_id == "none":
+        if video_id in generation_data:
+            generation_data[video_id]['background_music_path'] = None
+        else:
+            generation_data[video_id] = {'background_music_path': None}
+        return jsonify({"message": "No background music selected"}), 200
+    music_file_name = f"{music_id}.mp3"
+    try:
+        background_music_path = download_from_gcs(f"/tmp/{music_file_name}", music_file_name, MUSIC_BUCKET)
+        if video_id in generation_data:
+            generation_data[video_id]['background_music_path'] = background_music_path
+        else:
+            generation_data[video_id] = {'background_music_path': background_music_path}
+        return jsonify({"message": "Background music selected successfully", "music_path": background_music_path}), 200
+    except Exception as e:
+        return jsonify({"error": f"Failed to select background music: {str(e)}"}), 500
+
+
 @app.route('/generate_script', methods=['POST'])
 def generate_script():
     data = request.json
@@ -464,17 +490,6 @@ def generate_script():
 
     return jsonify({"video_id": video_id, "title": title, "script": script}), 200
 
-# @app.route('/generate_images/<video_id>', methods=['POST'])
-# def generate_images(video_id):
-#     if video_id not in generation_data:
-#         return jsonify({"error": "Invalid video_id"}), 400
-
-#     data = generation_data[video_id]
-#     image_prompts = data['image_prompts']
-#     image_paths = generate_images_from_script(image_prompts, video_id)
-    
-#     generation_data[video_id]['image_paths'] = image_paths
-#     return jsonify({"message": "Images generated", "image_paths": image_paths}), 200
 
 @app.route('/generate_images/<video_id>', methods=['POST'])
 def generate_images_endpoint(video_id):
@@ -523,11 +538,12 @@ def create_video(video_id):
     image_paths = data['image_paths']
     words = data['words']
     audio_file_path = data['audio_file_path']
+    background_music_path = generation_data[video_id].get('background_music_path')
     
     if not video_path or not image_paths or not words or not audio_file_path:
         return jsonify({"error": "Required data (background video, images, audio, or words) is missing"}), 400
     try:
-        final_video_file = create_video_with_audio(video_path, image_paths, words, audio_file_path, video_id)
+        final_video_file = create_video_with_audio(video_path, image_paths, words, audio_file_path, video_id, background_music_path)
         return jsonify({"message": "Video created successfully", "video_file": final_video_file}), 200
     except Exception as e:
         return jsonify({"error": f"Failed to create video: {str(e)}"}), 500
