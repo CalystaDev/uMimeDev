@@ -111,6 +111,8 @@ def generate_images_from_script(image_prompts: List[str], video_id: str) -> List
             result = future.result()
             if result:
                 image_urls.append(result)
+            else:
+                image_urls.append(image_urls[-1])
     return image_urls
 
 
