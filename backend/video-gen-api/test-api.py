@@ -1,10 +1,10 @@
 import requests
-BASE_URL = "https://bgtest-1010927570704.us-east1.run.app"
+BASE_URL = "https://videogenapi-410774176567.us-east1.run.app"
 
 # Example data for testing
-test_prompt = "how to make brownies"
+test_prompt = "how to make a oatmeal"
 test_voice_id = "jsCqWAovK2LkecY7zXl4"
-background_id = "minecraft.mov"
+background_id = "gta.mov"
 
 def test_generate_script():
     url = f"{BASE_URL}/generate_script"

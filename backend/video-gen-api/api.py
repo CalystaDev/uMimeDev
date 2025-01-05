@@ -17,8 +17,8 @@ import threading
 
 open_ai_api_key = os.getenv("OPEN_AI_API_KEY")
 eleven_labs_api_key = os.getenv("ELEVEN_LABS_API_KEY")
-BACKGROUND_BUCKET = 'background-vids'
-MIMES_BUCKET = 'mimes'
+BACKGROUND_BUCKET = 'backgroundvids'
+MIMES_BUCKET = 'final-mimes'
 VIDEO_FILE_NAME = 'subwaysurfers.mov'
 
 storage_client = storage.Client()
@@ -237,7 +237,7 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
     print(f"Image URLs: image_urls")
     for i, image_url in enumerate(image_urls):
         print(f"Downloading image {i} from {image_url}")
-        temp_path = download_from_gcs(f"/tmp/image_{i}.png", image_url.replace("https://storage.googleapis.com/mimes/", ""), 'mimes')
+        temp_path = download_from_gcs(f"/tmp/image_{i}.png", image_url.replace("https://storage.googleapis.com/final-mimes/", ""), 'final-mimes')
         img = cv2.imread(temp_path)
         if img is None:
             print(f"Error: Could not load image {temp_path}")
@@ -281,7 +281,7 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
 
     final_output = f"final_output_with_audio_{video_id}.mp4"
 
-    audio_path = download_from_gcs(f"/tmp/audio.mp3", audio_url.replace("https://storage.googleapis.com/mimes/", ""), 'mimes')
+    audio_path = download_from_gcs(f"/tmp/audio.mp3", audio_url.replace("https://storage.googleapis.com/final-mimes/", ""), 'final-mimes')
     ffmpeg_command = f'ffmpeg -i {output_file} -i {audio_path} -c:v copy -c:a aac {final_output}'
     print(f"Running FFmpeg command: {ffmpeg_command}")
     result = os.system(ffmpeg_command)
