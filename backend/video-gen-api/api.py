@@ -309,8 +309,8 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
             '-i', audio_path,           # Input primary audio file
             '-i', background_music_path,  # Input background music file
             '-filter_complex', (
-                "[1:a]volume=2[a1];"    # Reduce primary audio volume to 50%
-                "[2:a]volume=0.25[a2];"    # Increase background music volume to 150%
+                "[1:a]volume=2[a1];"    # Increase primary audio volume
+                "[2:a]volume=0.25[a2];" # Reduce background music volume
                 "[a1][a2]amix=inputs=2:duration=first:dropout_transition=2[a]"  # Mix the two audio streams
             ),
             '-map', '0:v',               # Map video from the video file
@@ -318,27 +318,29 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
             '-c:v', 'libx264',           # Re-encode video with H.264 codec
             '-preset', 'fast',           # Use a faster encoding preset for efficiency
             '-crf', '23',                # Set quality for video
-            '-c:a', 'aac',               # Re-encode audio with AAC codec
+            '-c:a', 'aac',               # Encode mixed audio with AAC codec (still needed after mixing)
             '-b:a', '192k',              # Set audio bitrate for good quality
             '-movflags', '+faststart',   # Optimize for web streaming
             '-shortest',                 # Ensure the output duration matches the shortest input
             final_output                 # Output file
         ]
+
     else:
         # Use subprocess to run the ffmpeg command to re-encode video and combine with audio
+        print("running no background music ffmpeg command.")
         ffmpeg_command = [
             'ffmpeg',
             '-i', output_file,       # Input video file
             '-i', audio_path,        # Input audio file
             '-c:v', 'libx264',       # Re-encode video with H.264 codec
-            '-preset', 'fast',       # Use a faster encoding preset for efficiency
+            '-preset', 'ultrafast',       # Use a faster encoding preset for efficiency
             '-crf', '23',            # Set quality (lower is better; 23 is default for H.264)
-            '-c:a', 'aac',           # Re-encode audio with AAC codec
-            '-b:a', '192k',          # Set audio bitrate for good quality
+            '-c:a', 'copy',          # Copy audio stream without re-encoding
             '-movflags', '+faststart',  # Optimize for web streaming
             '-shortest',             # Ensure the output duration matches the shortest input
             final_output             # Output file
         ]
+
 
     print(f"Running FFmpeg command: {' '.join(ffmpeg_command)}")
 
@@ -367,7 +369,7 @@ def select_background(video_id):
     if not background_id:
         return jsonify({"error": "Background ID is required"}), 400
     #@TODO: fix the ID-name mapping
-    background_file_name = f"{background_id}.mov"
+    background_file_name = f"{background_id}.mp4"
     try:
         video_path = download_from_gcs(f"/tmp/{background_file_name}", background_file_name, BACKGROUND_BUCKET)
         if video_id in generation_data:
