@@ -9,7 +9,7 @@ import openai
 from prompts import prompts
 from google.cloud import storage
 from moviepy.editor import VideoFileClip, TextClip, concatenate_videoclips, CompositeVideoClip, AudioFileClip
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, make_response
 from flask_cors import CORS
 import cv2
 import numpy as np
@@ -360,8 +360,21 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
 app = Flask(__name__)
 CORS(app)
 
-@app.route('/select_background/<video_id>', methods=['POST'])
+def handle_preflight_request():
+    response = make_response()
+    response.headers.add("Access-Control-Allow-Origin", "*")
+    response.headers.add("Access-Control-Allow-Headers", "*")
+    response.headers.add("Access-Control-Allow-Methods", "*")
+    return response
+
+def corsify_response(response):
+    response.headers.add("Access-Control-Allow-Origin", "*")
+    return response
+
+@app.route('/select_background/<video_id>', methods=['POST', 'OPTIONS'])
 def select_background(video_id):
+    if request.method == 'OPTIONS':
+        return handle_preflight_request()
     data = request.json
     background_id = data.get('background_id')
     if not background_id:
@@ -374,13 +387,16 @@ def select_background(video_id):
             generation_data[video_id]['background_video_path'] = video_path
         else:
             generation_data[video_id] = {'background_video_path': video_path}
-        return jsonify({"message": "Background video selected successfully", "video_path": video_path}), 200
+        # return jsonify({"message": "Background video selected successfully", "video_path": video_path}), 200
+        return corsify_response(jsonify({"message": "Background video selected successfully", "video_path": video_path}))
     except Exception as e:
         return jsonify({"error": f"Failed to select background video: {str(e)}"}), 500
 
 
-@app.route('/select_background_music/<video_id>', methods=['POST'])
+@app.route('/select_background_music/<video_id>', methods=['POST', 'OPTIONS'])
 def select_background_music(video_id):
+    if request.method == 'OPTIONS':
+        return handle_preflight_request()
     data = request.json
     music_id = data.get('music_id')
     if not music_id:
@@ -398,13 +414,16 @@ def select_background_music(video_id):
             generation_data[video_id]['background_music_path'] = background_music_path
         else:
             generation_data[video_id] = {'background_music_path': background_music_path}
-        return jsonify({"message": "Background music selected successfully", "music_path": background_music_path}), 200
+        # return jsonify({"message": "Background music selected successfully", "music_path": background_music_path}), 200
+        return corsify_response(jsonify({"message": "Background music selected successfully", "music_path": background_music_path}))
     except Exception as e:
         return jsonify({"error": f"Failed to select background music: {str(e)}"}), 500
 
 
-@app.route('/generate_script', methods=['POST'])
+@app.route('/generate_script', methods=['POST', 'OPTIONS'])
 def generate_script():
+    if request.method == 'OPTIONS':
+        return handle_preflight_request()
     data = request.json
     prompt = data.get('prompt')
     voice_id = data.get('voice_id')
@@ -428,14 +447,17 @@ def generate_script():
     
     print(generation_data[video_id])
 
-    return jsonify({"video_id": video_id, "title": title, "script": script}), 200
+    # return jsonify({"video_id": video_id, "title": title, "script": script}), 200
+    return corsify_response(jsonify({"video_id": video_id, "title": title, "script": script}))
 
 
-@app.route('/generate_images/<video_id>', methods=['POST'])
+@app.route('/generate_images/<video_id>', methods=['POST', 'OPTIONS'])
 def generate_images_endpoint(video_id):
     """
     HTTPS endpoint to generate images for a given video ID using optimized multithreading.
     """
+    if request.method == 'OPTIONS':
+        return handle_preflight_request()
     if video_id not in generation_data:
         return jsonify({"error": "Invalid video_id"}), 400
 
@@ -447,13 +469,16 @@ def generate_images_endpoint(video_id):
     try:
         image_paths = generate_images_from_script(image_prompts, video_id)
         generation_data[video_id]['image_paths'] = image_paths
-        return jsonify({"message": "Images generated successfully", "image_paths": image_paths}), 200
+        # return jsonify({"message": "Images generated successfully", "image_paths": image_paths}), 200
+        return corsify_response(jsonify({"message": "Images generated successfully", "image_paths": image_paths}))
     except Exception as e:
         return jsonify({"error": f"Failed to generate images: {str(e)}"}), 500
 
 
-@app.route('/generate_audio/<video_id>', methods=['POST'])
+@app.route('/generate_audio/<video_id>', methods=['POST', 'OPTIONS'])
 def generate_audio_for_video(video_id):
+    if request.method == 'OPTIONS':
+        return handle_preflight_request()
     if video_id not in generation_data:
         return jsonify({"error": "Invalid video_id"}), 400
 
@@ -466,10 +491,13 @@ def generate_audio_for_video(video_id):
     generation_data[video_id]['audio_file_path'] = audio_file_path
     generation_data[video_id]['words'] = words
 
-    return jsonify({"message": "Audio generated", "audio_file": audio_file_path}), 200
+    # return jsonify({"message": "Audio generated", "audio_file": audio_file_path}), 200
+    return corsify_response(jsonify({"message": "Audio generated", "audio_file": audio_file_path}))
 
-@app.route('/create_video/<video_id>', methods=['POST'])
+@app.route('/create_video/<video_id>', methods=['POST', 'OPTIONS'])
 def create_video(video_id):
+    if request.method == 'OPTIONS':
+        return handle_preflight_request()
     if video_id not in generation_data:
         return jsonify({"error": "Invalid video_id"}), 400
     
@@ -484,7 +512,8 @@ def create_video(video_id):
         return jsonify({"error": "Required data (background video, images, audio, or words) is missing"}), 400
     try:
         final_video_file = create_video_with_audio(video_path, image_paths, words, audio_file_path, video_id, background_music_path)
-        return jsonify({"message": "Video created successfully", "video_file": final_video_file}), 200
+        # return jsonify({"message": "Video created successfully", "video_file": final_video_file}), 200
+        return corsify_response(jsonify({"message": "Video created successfully", "video_file": final_video_file}))
     except Exception as e:
         return jsonify({"error": f"Failed to create video: {str(e)}"}), 500
 
