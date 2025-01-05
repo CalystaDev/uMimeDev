@@ -1,11 +1,11 @@
 import requests
 
 # Set the base URL of your Cloud Run service
-BASE_URL = "https://videogenapi-410774176567.us-east1.run.app"
+BASE_URL = "https://apiacc-1010927570704.us-east1.run.app"
 
 # Example data for testing
 test_prompt = "how to make a coke flaot"
-test_voice_id = "2EiwWnXFnvU5JabPnv8n"
+test_voice_id = "D38z5RcWu1voky8WS1ja"
 background_id = "subwaysurfers"
 music_id = "inspirational"
 
@@ -83,7 +83,10 @@ def test_generate_images(video_id):
 
 def test_generate_audio(video_id):
     url = f"{BASE_URL}/generate_audio/{video_id}"
-    response = requests.post(url)
+    payload = {
+        "voice_id": test_voice_id
+    }
+    response = requests.post(url, json=payload)
     print("Generate Audio Response:", response.json())
     return response.json().get("audio_file")
 

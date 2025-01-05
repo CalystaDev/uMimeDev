@@ -459,12 +459,14 @@ def generate_audio_for_video(video_id):
     if video_id not in generation_data:
         return jsonify({"error": "Invalid video_id"}), 400
 
+    voice_id = request.json.get('voice_id')
     data = generation_data[video_id]
+    
     script = data['script'].replace("\n", " ").replace("—", "-").replace("#", "")
     script_with_dollars = data['script_with_dollars'].replace("\n", " ").replace("—", "-").replace("#", "")
     print(f"Script: {script}")
     print(f"Script w $: {script_with_dollars}")
-    audio_file_path, _, words = generate_audio(script, script_with_dollars, "2EiwWnXFnvU5JabPnv8n", video_id)
+    audio_file_path, _, words = generate_audio(script, script_with_dollars, voice_id, video_id)
     generation_data[video_id]['audio_file_path'] = audio_file_path
     generation_data[video_id]['words'] = words
 
