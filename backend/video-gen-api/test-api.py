@@ -1,7 +1,7 @@
 import requests
 
 # Set the base URL of your Cloud Run service
-BASE_URL = "https://apiacc-1010927570704.us-east1.run.app"
+BASE_URL = "https://videogenapi-410774176567.us-east1.run.app"
 
 # Example data for testing
 test_prompt = "how to make a coke flaot"
