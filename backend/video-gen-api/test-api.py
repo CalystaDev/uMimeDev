@@ -4,7 +4,7 @@ import requests
 BASE_URL = "https://videogenapi-410774176567.us-east1.run.app"
 
 # Example data for testing
-test_prompt = "how to make a cocktail"
+test_prompt = "how to make iced latte"
 test_voice_id = "D38z5RcWu1voky8WS1ja"
 background_id = "minecraft"
 music_id = "action"
@@ -123,3 +123,4 @@ if __name__ == "__main__":
                     if audio_file:
                         video_file = test_create_video(video_id)
                         print("Final Video File URL:", video_file)
+
