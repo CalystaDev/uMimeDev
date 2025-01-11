@@ -4,10 +4,10 @@ import requests
 BASE_URL = "https://videogenapi-410774176567.us-east1.run.app"
 
 # Example data for testing
-test_prompt = "how to make a cocktail"
+test_prompt = "how to make coffee"
 test_voice_id = "D38z5RcWu1voky8WS1ja"
-background_id = "minecraft"
-music_id = "action"
+background_id = "gta"
+music_id = "inspirational"
 
 
 def test_generate_script():
@@ -81,14 +81,32 @@ def test_generate_images(video_id):
     return response.json().get("image_paths")
 
 
+# def test_generate_audio(video_id):
+#     url = f"{BASE_URL}/generate_audio/{video_id}"
+#     payload = {
+#         "voice_id": test_voice_id
+#     }
+#     response = requests.post(url, json=payload)
+#     print("Generate Audio Response:", response.json())
+#     return response.json().get("audio_file")
+
 def test_generate_audio(video_id):
     url = f"{BASE_URL}/generate_audio/{video_id}"
     payload = {
         "voice_id": test_voice_id
     }
     response = requests.post(url, json=payload)
-    print("Generate Audio Response:", response.json())
-    return response.json().get("audio_file")
+    print("HTTP Status Code:", response.status_code)
+    print("Raw Response Content:", response.text)
+    
+    try:
+        json_data = response.json()
+        print("Generate Audio Response:", json_data)
+        return json_data.get("audio_file")
+    except requests.exceptions.JSONDecodeError:
+        print("Failed to decode JSON. Raw response:", response.text)
+        return None
+
 
 
 def test_create_video(video_id):

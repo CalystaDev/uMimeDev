@@ -13,6 +13,7 @@ openai==0.28.0
 opencv-python-headless==4.7.0.72
 protobuf>=3.19.5,<6.0.0
 pydantic==2.8.2
+replicate==1.0.4
 requests==2.32.3
 Pillow==9.5.0
 Flask==3.0.0

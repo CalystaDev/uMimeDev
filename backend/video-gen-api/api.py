@@ -16,6 +16,7 @@ import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 import threading
 import subprocess
+import replicate
 
 open_ai_api_key = os.getenv("OPEN_AI_API_KEY")
 eleven_labs_api_key = os.getenv("ELEVEN_LABS_API_KEY")
@@ -84,21 +85,36 @@ def generate_single_image(prompt: str, video_id: str, index: int) -> str:
     """
     Helper function to generate a single image and upload it to GCS.
     """
-    openai.api_key = open_ai_api_key
     try:
-        response = openai.Image.create(prompt=prompt, n=1, size="512x512")
-        image_url = response['data'][0]['url']
-        
+        output = replicate.run(
+        "black-forest-labs/flux-schnell",
+        input={"prompt": prompt}
+        )
         local_image_path = f"image_{video_id}_{index}.png"
         with open(local_image_path, 'wb') as img_file:
-            img_file.write(requests.get(image_url).content)
-        
+            img_file.write(output[0].read())
         with gcs_lock:
             gcs_image_url = upload_to_gcs(local_image_path, MIMES_BUCKET, f"{video_id}/images/image_{index}.png")
         return gcs_image_url
     except Exception as e:
         print(f"Error generating image for prompt '{prompt}': {e}")
         return None
+
+    # openai.api_key = open_ai_api_key
+    # try:
+    #     response = openai.Image.create(prompt=prompt, n=1, size="512x512")
+    #     image_url = response['data'][0]['url']
+        
+    #     local_image_path = f"image_{video_id}_{index}.png"
+    #     with open(local_image_path, 'wb') as img_file:
+    #         img_file.write(requests.get(image_url).content)
+        
+    #     with gcs_lock:
+    #         gcs_image_url = upload_to_gcs(local_image_path, MIMES_BUCKET, f"{video_id}/images/image_{index}.png")
+    #     return gcs_image_url
+    # except Exception as e:
+    #     print(f"Error generating image for prompt '{prompt}': {e}")
+    #     return None
 
 def generate_images_from_script(image_prompts: List[str], video_id: str) -> List[str]:
     """
