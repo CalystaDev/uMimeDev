@@ -81,26 +81,6 @@ def generate_script_from_llm(prompt: str) -> Tuple[List[str], str, str, str]:
 # Lock to prevent race conditions during GCS uploads
 gcs_lock = threading.Lock()
 
-# def generate_single_image(prompt: str, video_id: str, index: int) -> str:
-#     """
-#     Helper function to generate a single image and upload it to GCS.
-#     """
-#     openai.api_key = open_ai_api_key
-#     try:
-#         response = openai.Image.create(prompt=prompt, n=1, size="512x512")
-#         image_url = response['data'][0]['url']
-        
-#         local_image_path = f"image_{video_id}_{index}.png"
-#         with open(local_image_path, 'wb') as img_file:
-#             img_file.write(requests.get(image_url).content)
-        
-#         with gcs_lock:
-#             gcs_image_url = upload_to_gcs(local_image_path, MIMES_BUCKET, f"{video_id}/images/image_{index}.png")
-#         return gcs_image_url
-#     except Exception as e:
-#         print(f"Error generating image for prompt '{prompt}': {e}")
-#         return None
-
 def generate_single_image(prompt: str, video_id: str, index: int) -> str:
     """
     Helper function to generate a single image and upload it to GCS.
