@@ -81,32 +81,14 @@ def test_generate_images(video_id):
     return response.json().get("image_paths")
 
 
-# def test_generate_audio(video_id):
-#     url = f"{BASE_URL}/generate_audio/{video_id}"
-#     payload = {
-#         "voice_id": test_voice_id
-#     }
-#     response = requests.post(url, json=payload)
-#     print("Generate Audio Response:", response.json())
-#     return response.json().get("audio_file")
-
 def test_generate_audio(video_id):
     url = f"{BASE_URL}/generate_audio/{video_id}"
     payload = {
         "voice_id": test_voice_id
     }
     response = requests.post(url, json=payload)
-    print("HTTP Status Code:", response.status_code)
-    print("Raw Response Content:", response.text)
-    
-    try:
-        json_data = response.json()
-        print("Generate Audio Response:", json_data)
-        return json_data.get("audio_file")
-    except requests.exceptions.JSONDecodeError:
-        print("Failed to decode JSON. Raw response:", response.text)
-        return None
-
+    print("Generate Audio Response:", response.json())
+    return response.json().get("audio_file")
 
 
 def test_create_video(video_id):
@@ -127,6 +109,21 @@ def test_create_video(video_id):
     return None
 
 
+# # Run the tests in sequence
+# if __name__ == "__main__":
+#     video_id = test_generate_script()
+#     if video_id:
+#         background_video = test_select_background(video_id)
+#         if background_video:
+#             background_music = test_select_background_music(video_id)
+#             if background_music or music_id == "none":
+#                 image_paths = test_generate_images(video_id)
+#                 if image_paths:
+#                     audio_file = test_generate_audio(video_id)
+#                     if audio_file:
+#                         video_file = test_create_video(video_id)
+#                         print("Final Video File URL:", video_file)
+
 # Run the tests in sequence
 if __name__ == "__main__":
     video_id = test_generate_script()
@@ -135,9 +132,7 @@ if __name__ == "__main__":
         if background_video:
             background_music = test_select_background_music(video_id)
             if background_music or music_id == "none":
-                image_paths = test_generate_images(video_id)
-                if image_paths:
-                    audio_file = test_generate_audio(video_id)
-                    if audio_file:
-                        video_file = test_create_video(video_id)
-                        print("Final Video File URL:", video_file)
+                audio_file = test_generate_audio(video_id)
+                if audio_file:
+                    video_file = test_create_video(video_id)
+                    print("Final Video File URL:", video_file)
