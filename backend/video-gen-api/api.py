@@ -49,12 +49,12 @@ def generate_script_from_llm(prompt: str) -> Tuple[List[str], str, str, str]:
     openai.api_key = open_ai_api_key
     try:
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "user", "content": prompt}
             ],
             max_tokens=1500,
-            temperature=0.7,
+            temperature=0.8,
         )
         response_content = response.choices[0].message['content']
         title, script_body = response_content.split("#####", 1)
