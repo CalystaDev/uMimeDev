@@ -197,9 +197,15 @@ def read_image_from_url(url):
     else:
         raise ValueError(f"Failed to fetch image from URL: {url}, status code: {response.status_code}")
 
+import cv2
+import numpy as np
+
+import cv2
+import numpy as np
+
 def apply_smooth_ken_burns(image, frame_idx, total_frames, start_scale=1.0, end_scale=1.2):
     """
-    Apply a smooth Ken Burns effect (zoom-in) to an image.
+    Apply a smooth Ken Burns effect (zoom-in) to an image with subpixel accuracy using OpenCV.
 
     Args:
         image: The input image (numpy array).
@@ -217,21 +223,23 @@ def apply_smooth_ken_burns(image, frame_idx, total_frames, start_scale=1.0, end_
     # Get the original dimensions
     h, w = image.shape[:2]
     
-    # Calculate the center crop dimensions
-    center_x, center_y = w // 2, h // 2
-    crop_w = int(w / scale)
-    crop_h = int(h / scale)
+    # Calculate the new dimensions after scaling
+    scaled_w = w / scale
+    scaled_h = h / scale
     
-    # Calculate cropping box
-    x1 = max(0, center_x - crop_w // 2)
-    y1 = max(0, center_y - crop_h // 2)
-    x2 = x1 + crop_w
-    y2 = y1 + crop_h
-
-    # Crop and resize the image
-    cropped_image = image[y1:y2, x1:x2]
-    smooth_image = cv2.resize(cropped_image, (w, h), interpolation=cv2.INTER_CUBIC)
-
+    # Calculate translation offsets to center the zoom
+    tx = (w - scaled_w) / 2
+    ty = (h - scaled_h) / 2
+    
+    # Create the scaling and translation matrix
+    scale_matrix = np.array([
+        [scale, 0, -tx * scale],
+        [0, scale, -ty * scale]
+    ], dtype=np.float32)
+    
+    # Apply the transformation with subpixel accuracy
+    smooth_image = cv2.warpAffine(image, scale_matrix, (w, h), flags=cv2.INTER_LINEAR)
+    
     return smooth_image
 
 def create_video_with_audio(video_path: str, image_urls: list, words: list, audio_url: str, video_id: str, background_music_path):
