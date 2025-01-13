@@ -6,7 +6,7 @@ import requests
 import base64
 from typing import List, Tuple
 import openai
-from prompts import prompts
+from prompts import script_prompts, title_prompts
 from google.cloud import storage
 from moviepy.editor import VideoFileClip, TextClip, concatenate_videoclips, CompositeVideoClip, AudioFileClip
 from flask import Flask, request, jsonify
@@ -41,7 +41,12 @@ def download_from_gcs(video_file_path: str, video_file_name: str, bucket_name: s
     return video_file_path
 
 def construct_llm_prompt(prompt: str, voice_id: str) -> str:
-    base_prompt = prompts[voice_id]
+    base_prompt = script_prompts[voice_id]
+    llm_prompt = base_prompt.replace("<promp-here>", prompt)
+    return llm_prompt
+
+def construct_title_llm_prompt(prompt: str, voice_id: str) -> str:
+    base_prompt = title_prompts[voice_id]
     llm_prompt = base_prompt.replace("<promp-here>", prompt)
     return llm_prompt
 
@@ -56,10 +61,7 @@ def generate_script_from_llm(prompt: str) -> Tuple[List[str], str, str, str]:
             max_tokens=1500,
             temperature=0.8,
         )
-        response_content = response.choices[0].message['content']
-        title, script_body = response_content.split("#####", 1)
-        title = title.strip()
-        
+        script_body = response.choices[0].message['content']
         script_lines = []
         script_with_dollars = []
         image_prompts = []
@@ -73,10 +75,33 @@ def generate_script_from_llm(prompt: str) -> Tuple[List[str], str, str, str]:
                 script_with_dollars.append(line)
         script = "\n".join(script_lines).strip()
         script_with_dollars = "\n".join(script_with_dollars).strip()
-        return image_prompts, title, script, script_with_dollars
+        return image_prompts, script, script_with_dollars
     except Exception as e:
         return [], f"An error occurred: {str(e)}", "", ""
 
+def generate_title_from_llm(prompt: str) -> str:
+    try:
+        url = "https://api.studio.nebius.ai/v1/chat/completions"
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "*/*",
+            "Authorization": f"Bearer {os.environ.get('NEBIUS_API_KEY')}"
+        }
+        payload = {
+            "temperature": 0.8,
+            "model": "meta-llama/Meta-Llama-3.1-8B-Instruct",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+        }
+        response = (requests.post(url, headers=headers, json=payload)).json()
+        title = response['choices'][0]['message']['content']
+        return title
+    except Exception as e:
+        return f"An error occurred with Nebius: {str(e)}"
 
 # Lock to prevent race conditions during GCS uploads
 gcs_lock = threading.Lock()
@@ -404,33 +429,36 @@ def select_background_music(video_id):
     except Exception as e:
         return jsonify({"error": f"Failed to select background music: {str(e)}"}), 500
 
+@app.route('/generate_title', methods=['POST'])
+def generate_title():
+    data = request.json
+    prompt = data.get('prompt')
+    voice_id = data.get('voice_id')
+    if not prompt or not voice_id:
+        return jsonify({"error": "Prompt and voice_id are required!!"}), 400
+    llm_prompt = construct_title_llm_prompt(prompt, voice_id)
+    title = generate_title_from_llm(llm_prompt)
+    return jsonify({"title": title}), 200
 
 @app.route('/generate_script', methods=['POST'])
 def generate_script():
     data = request.json
     prompt = data.get('prompt')
     voice_id = data.get('voice_id')
-    
     if not prompt or not voice_id:
         return jsonify({"error": "Prompt and voice_id are required"}), 400
-
     llm_prompt = construct_llm_prompt(prompt, voice_id)
-    image_prompts, title, script, script_with_dollars = generate_script_from_llm(llm_prompt)
-    
+    image_prompts, script, script_with_dollars = generate_script_from_llm(llm_prompt)
     if not script:
         return jsonify({"error": "Error generating script"}), 500
-    
     video_id = str(datetime.datetime.now().timestamp())
     generation_data[video_id] = {
         'image_prompts': image_prompts,
-        'title': title,
         'script': script,
         'script_with_dollars': script_with_dollars
     }
-    
     print(generation_data[video_id])
-
-    return jsonify({"video_id": video_id, "title": title, "script": script}), 200
+    return jsonify({"video_id": video_id, "script": script}), 200
 
 
 @app.route('/generate_images/<video_id>', methods=['POST'])
