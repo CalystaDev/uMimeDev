@@ -75,6 +75,8 @@ def generate_script_from_llm(prompt: str) -> Tuple[List[str], str, str, str]:
                 script_with_dollars.append(line)
         script = "\n".join(script_lines).strip()
         script_with_dollars = "\n".join(script_with_dollars).strip()
+        script = script.replace("—", "; ")
+        script_with_dollars = script_with_dollars.replace("—", "- ")
         return image_prompts, script, script_with_dollars
     except Exception as e:
         return [], f"An error occurred: {str(e)}", "", ""
@@ -277,6 +279,19 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
     thickness = 8                 # Thickness for the main text
     outline_thickness = 14         # Thickness for the outline
 
+    # Load the watermark
+    watermark_path = download_from_gcs("/tmp/watermark.png", "watermark.png", "watermark-asset")
+    if not watermark_path:
+        raise RuntimeError("Error: Could not load watermark image.")
+
+    watermark_cv2 = cv2.imread(watermark_path, cv2.IMREAD_UNCHANGED)
+    if watermark_cv2 is None:
+        raise RuntimeError("Error: Failed to read the watermark image with OpenCV.")
+
+    # Resize the watermark
+    watermark_height, watermark_width = watermark_cv2.shape[:2][0] // 16, watermark_cv2.shape[:2][1] // 16
+    watermark_cv2 = cv2.resize(watermark_cv2, (watermark_width, watermark_height), interpolation=cv2.INTER_AREA)
+
     frame_idx = 0
     while cap.isOpened():
         ret, frame = cap.read()
@@ -318,12 +333,34 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
                     # Calculate the center position
                     center_x = (width - text_width) // 2  # Horizontal center
                     center_y = (height + text_height) // 2  # Vertical center
+                    
+                    text = text.replace("’", "'").replace("—", "-")
 
                     cv2.putText(frame, text, (center_x, center_y), font, font_scale, outline_color, outline_thickness, cv2.LINE_AA)
                     cv2.putText(frame, text, (center_x, center_y), font, font_scale, font_color, thickness, cv2.LINE_AA)           
-                     
+
+            
+            # Adjust ROI size if needed
+            # if watermark_height > frame_height or watermark_width > frame_width:
+            #     scaling_factor = min(frame_height / watermark_height, frame_width / watermark_width)
+            #     watermark_width = int(watermark_width * scaling_factor)
+            #     watermark_height = int(watermark_height * scaling_factor)
+            #     watermark_cv2 = cv2.resize(watermark_cv2, (watermark_width, watermark_height), interpolation=cv2.INTER_AREA)
+
+            overlay = frame[20:20+watermark_height, 10:10+watermark_width]
+            if watermark_cv2.shape[2] == 4:  # RGBA watermark
+                watermark_rgb = watermark_cv2[:, :, :3]
+                watermark_alpha = watermark_cv2[:, :, 3] / 255.0
+                for c in range(3):
+                    overlay[:, :, c] = (1 - watermark_alpha) * overlay[:, :, c] + watermark_alpha * watermark_rgb[:, :, c]
+            else:
+                overlay = cv2.addWeighted(overlay, 0, watermark_cv2, 1, 0)
+
+            frame[20:20+watermark_height, 10:10+watermark_width] = overlay
+
             out.write(frame)
             frame_idx += 1
+
     cap.release()
     out.release()
 
@@ -344,8 +381,8 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
             '-i', audio_path,           # Input primary audio file
             '-i', background_music_path,  # Input background music file
             '-filter_complex', (
-                "[1:a]volume=2[a1];"    # Reduce primary audio volume to 50%
-                "[2:a]volume=0.25[a2];"    # Increase background music volume to 150%
+                "[1:a]volume=2[a1];"
+                "[2:a]volume=0.20[a2];"
                 "[a1][a2]amix=inputs=2:duration=first:dropout_transition=2[a]"  # Mix the two audio streams
             ),
             '-map', '0:v',               # Map video from the video file
