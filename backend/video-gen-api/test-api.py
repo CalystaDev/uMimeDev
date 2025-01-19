@@ -3,7 +3,7 @@ import requests
 BASE_URL = "https://videogenapi-410774176567.us-east1.run.app"
 
 # Example data for testing
-test_prompt = "explain to me how the water cycle works in solid detail"
+test_prompt = "how to use digital camera"
 test_voice_id = "ZQe5CZNOzWyzPSCn5a3c"
 background_id = "subwaysurfers"
 music_id = "sport"
