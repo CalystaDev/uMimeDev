@@ -516,7 +516,7 @@ def generate_script():
     image_prompts, script, script_with_dollars = generate_script_from_llm(llm_prompt)
     if not script:
         return jsonify({"error": "Error generating script"}), 500
-    video_id = str(datetime.datetime.now().timestamp())
+    video_id = str(uuid.uuid4())
     generation_data[video_id] = {
         'image_prompts': image_prompts,
         'script': script,
