@@ -178,6 +178,8 @@ def generate_audio(script: str, script_with_time_delimiter: str, voice_id: str, 
             curr_word += char
     word_list = script_with_time_delimiter.split()
     word_count = 0
+    print(f"Wordlist: {word_list}")
+    print(f"Words 1: {words}")
     for word in word_list:
         if word == "$":
             if word_count > 0 and word_count <= len(words):
@@ -185,6 +187,8 @@ def generate_audio(script: str, script_with_time_delimiter: str, voice_id: str, 
                 words.insert(word_count, ("$", previous_word[1], previous_word[2]))
         else:
             word_count += 1
+    print(f"Words 2: {words}")
+    
     return gcs_audio_url, response_dict, words
 
 def read_image_from_url(url):
@@ -264,6 +268,7 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
 
     background_frames = []
 
+    print(f"Words: {words}")
     # Read all frames of the background video
     while cap.isOpened():
         ret, frame = cap.read()
