@@ -17,6 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 import threading
 import subprocess
 import replicate
+import uuid
 
 open_ai_api_key = os.getenv("OPEN_AI_API_KEY")
 eleven_labs_api_key = os.getenv("ELEVEN_LABS_API_KEY")
