@@ -361,7 +361,7 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
                     center_x = (width - text_width) // 2  # Horizontal center
                     center_y = (height + text_height) // 2  # Vertical center
                     
-                    text = text.replace("’", "'").replace("—", "-")
+                    text = text.replace("’", "'").replace("—", "-").replace("”", "\"").replace("“", "\"").replace("‘", "'")
 
                     cv2.putText(frame, text, (center_x, center_y), font, font_scale, outline_color, outline_thickness, cv2.LINE_AA)
                     cv2.putText(frame, text, (center_x, center_y), font, font_scale, font_color, thickness, cv2.LINE_AA)           
