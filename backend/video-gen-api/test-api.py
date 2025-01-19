@@ -3,10 +3,10 @@ import requests
 BASE_URL = "https://videogenapi-410774176567.us-east1.run.app"
 
 # Example data for testing
-test_prompt = "how to make a cake"
-test_voice_id = "EXAVITQu4vr4xnSDxMaL"
-background_id = "minecraft"
-music_id = "action"
+test_prompt = "how to use digital camera"
+test_voice_id = "ZQe5CZNOzWyzPSCn5a3c"
+background_id = "subwaysurfers"
+music_id = "sport"
 
 def test_generate_title():
     """

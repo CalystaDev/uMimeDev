@@ -75,6 +75,8 @@ def generate_script_from_llm(prompt: str) -> Tuple[List[str], str, str, str]:
                 script_with_dollars.append(line)
         script = "\n".join(script_lines).strip()
         script_with_dollars = "\n".join(script_with_dollars).strip()
+        script = script.replace("—", "; ")
+        script_with_dollars = script_with_dollars.replace("—", "- ")
         return image_prompts, script, script_with_dollars
     except Exception as e:
         return [], f"An error occurred: {str(e)}", "", ""
@@ -174,6 +176,8 @@ def generate_audio(script: str, script_with_time_delimiter: str, voice_id: str, 
             curr_word = ''
         else:
             curr_word += char
+    if curr_word:
+        words.append((curr_word, start_times[len(start_times) - len(curr_word)], end_times[-1]))
     word_list = script_with_time_delimiter.split()
     word_count = 0
     for word in word_list:
@@ -183,6 +187,7 @@ def generate_audio(script: str, script_with_time_delimiter: str, voice_id: str, 
                 words.insert(word_count, ("$", previous_word[1], previous_word[2]))
         else:
             word_count += 1
+    
     return gcs_audio_url, response_dict, words
 
 def read_image_from_url(url):
@@ -247,9 +252,28 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = cap.get(cv2.CAP_PROP_FPS)
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))  # Total frames in the background video
+    video_duration = total_frames / fps
     output_file = f"final_video_with_audio_{video_id}.mp4"
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(output_file, fourcc, fps * 2, (width, height))
+    out = cv2.VideoWriter(output_file, fourcc, fps, (width, height))
+
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 2
+    font_color = (255, 255, 255)  # White text
+    outline_color = (0, 0, 0)     # Black outline
+    thickness = 8                 # Thickness for the main text
+    outline_thickness = 14         # Thickness for the outline
+
+    background_frames = []
+
+    print(f"Words: {words}")
+    # Read all frames of the background video
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break  # End of video
+        background_frames.append(frame)
 
     overlay_images = []
     print(f"Image URLs: image_urls")
@@ -264,40 +288,48 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
     print(f"Number of overlay images loaded: {len(overlay_images)}")
 
     image_end_times = [words[i - 1][2] + 1 for i, word in enumerate(words) if word[0] == "$"]
-    # image_durations = [
-    #     (overlay_images[i], start, end)
-    #     for i, (start, end) in enumerate([(words[i - 1][2], words[i][2]) for i, word in enumerate(words) if word[0] == "$"])
-    # ]
-    # print(f"Image durations: {image_durations}")
+    
+    print(f"Image End Times: {image_end_times}")
+    total_video_duration = max(image_end_times[-1], video_duration)
 
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    font_scale = 2
-    font_color = (255, 255, 255)  # White text
-    outline_color = (0, 0, 0)     # Black outline
-    thickness = 8                 # Thickness for the main text
-    outline_thickness = 14         # Thickness for the outline
+    # Load the watermark
+    watermark_path = download_from_gcs("/tmp/watermark.png", "watermark.png", "watermark-asset")
+    if not watermark_path:
+        raise RuntimeError("Error: Could not load watermark image.")
+
+    watermark_cv2 = cv2.imread(watermark_path, cv2.IMREAD_UNCHANGED)
+    if watermark_cv2 is None:
+        raise RuntimeError("Error: Failed to read the watermark image with OpenCV.")
+
+    # Resize the watermark
+    watermark_height, watermark_width = watermark_cv2.shape[:2][0] // 16, watermark_cv2.shape[:2][1] // 16
+    watermark_cv2 = cv2.resize(watermark_cv2, (watermark_width, watermark_height), interpolation=cv2.INTER_AREA)
+
+    video_repeat_count = int(total_video_duration // video_duration) + 1  # Repeat the video as needed
+    looped_background_frames = background_frames * video_repeat_count
 
     frame_idx = 0
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            print(f"End of video reached at frame {frame_idx}")
-            break
-        
-        if frame is None:
-            print(f"Warning: Empty frame at {frame_idx}")
-            continue
 
-        # Overlay the corresponding image
-        for _ in range(2):
+    for repeat in range(video_repeat_count):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            bottom_half_frame = frame[height // 2 : height, 0: width]
+            top_half_frame = np.zeros((height // 2, width, 3), dtype=np.uint8)
+            
+            image_found = False
+
             for i, img in enumerate(overlay_images):
                 start = 0 if i == 0 else image_end_times[i - 1]
-                end = image_end_times[i] if i != len(image_end_times) - 1 else int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) / (fps)
-
+                end = image_end_times[i] if i != len(image_end_times) - 1 else total_video_duration
                 # Adjust timing for doubled FPS
-                if start <= frame_idx / (fps * 2) <= end:
-                    total_frames = int((end - start) * fps * 2)
-                    ken_burns_frame_idx = int((frame_idx / (fps * 2) - start) * (fps * 2))
+                if start <= frame_idx / (fps) <= end:
+                    total_frames = int((end - start) * fps)
+                    ken_burns_frame_idx = int((frame_idx / (fps) - start) * (fps))
 
                     img_resized = cv2.resize(img, (width, height // 2))
                     ken_burns_image = apply_smooth_ken_burns(img_resized, ken_burns_frame_idx, total_frames)
@@ -305,25 +337,49 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
                     top_half_frame = frame[0:height // 2, 0:width]
                     top_half_frame = cv2.addWeighted(top_half_frame, 0, ken_burns_image, 1, 0)
                     frame[0:height // 2, 0:width] = top_half_frame
+                    image_found = True
                     break
+
+            if not image_found:
+                if overlay_images:
+                    last_img = overlay_images[-1]
+                    img_resized = cv2.resize(last_img, (width, height // 2))
+                    ken_burns_image = apply_smooth_ken_burns(img_resized, ken_burns_frame_idx, total_frames)
+
+                    top_half_frame = frame[0:height // 2, 0:width]
+                    top_half_frame = cv2.addWeighted(top_half_frame, 0, ken_burns_image, 1, 0)
+                    frame[0:height // 2, 0:width] = top_half_frame
 
             for i, (text, start, end) in enumerate(words):
                 if text == '$':
                     continue
-                if start <= frame_idx / (fps * 2) <= end:
-                    # text = text.replace("\n\n", "")
-                    # text = text.replace("—", "")
-                    # print(f"Adding text '{text}' at frame {frame_idx}")
+
+                if start <= frame_idx / (fps) <= end:
+
                     (text_width, text_height), baseline = cv2.getTextSize(text, font, font_scale, thickness)
                     # Calculate the center position
                     center_x = (width - text_width) // 2  # Horizontal center
                     center_y = (height + text_height) // 2  # Vertical center
+                    
+                    text = text.replace("’", "'").replace("—", "-")
 
                     cv2.putText(frame, text, (center_x, center_y), font, font_scale, outline_color, outline_thickness, cv2.LINE_AA)
                     cv2.putText(frame, text, (center_x, center_y), font, font_scale, font_color, thickness, cv2.LINE_AA)           
-                     
+
+            overlay = frame[20:20+watermark_height, 10:10+watermark_width]
+            if watermark_cv2.shape[2] == 4:  # RGBA watermark
+                watermark_rgb = watermark_cv2[:, :, :3]
+                watermark_alpha = watermark_cv2[:, :, 3] / 255.0
+                for c in range(3):
+                    overlay[:, :, c] = (1 - watermark_alpha) * overlay[:, :, c] + watermark_alpha * watermark_rgb[:, :, c]
+            else:
+                overlay = cv2.addWeighted(overlay, 0, watermark_cv2, 1, 0)
+
+            frame[20:20+watermark_height, 10:10+watermark_width] = overlay
+
             out.write(frame)
             frame_idx += 1
+
     cap.release()
     out.release()
 
@@ -344,8 +400,8 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
             '-i', audio_path,           # Input primary audio file
             '-i', background_music_path,  # Input background music file
             '-filter_complex', (
-                "[1:a]volume=2[a1];"    # Reduce primary audio volume to 50%
-                "[2:a]volume=0.25[a2];"    # Increase background music volume to 150%
+                "[1:a]volume=2[a1];"
+                "[2:a]volume=0.20[a2];"
                 "[a1][a2]amix=inputs=2:duration=first:dropout_transition=2[a]"  # Mix the two audio streams
             ),
             '-map', '0:v',               # Map video from the video file
@@ -363,6 +419,7 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
         # Use subprocess to run the ffmpeg command to re-encode video and combine with audio
         ffmpeg_command = [
             'ffmpeg',
+            '-stream_loop', '-1',      # Loop the video indefinitely
             '-i', output_file,       # Input video file
             '-i', audio_path,        # Input audio file
             '-c:v', 'libx264',       # Re-encode video with H.264 codec
