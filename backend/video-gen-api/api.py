@@ -338,7 +338,6 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
 
             if not image_found:
                 if overlay_images:
-                    # print("Last")
                     last_img = overlay_images[-1]
                     img_resized = cv2.resize(last_img, (width, height // 2))
                     ken_burns_image = apply_smooth_ken_burns(img_resized, ken_burns_frame_idx, total_frames)
@@ -351,11 +350,8 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
                 if text == '$':
                     continue
 
-                # print(text)
                 if start <= frame_idx / (fps) <= end:
-                    # text = text.replace("\n\n", "")
-                    # text = text.replace("—", "")
-                    # print(f"Adding text '{text}' at frame {frame_idx}")
+
                     (text_width, text_height), baseline = cv2.getTextSize(text, font, font_scale, thickness)
                     # Calculate the center position
                     center_x = (width - text_width) // 2  # Horizontal center
@@ -365,14 +361,6 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
 
                     cv2.putText(frame, text, (center_x, center_y), font, font_scale, outline_color, outline_thickness, cv2.LINE_AA)
                     cv2.putText(frame, text, (center_x, center_y), font, font_scale, font_color, thickness, cv2.LINE_AA)           
-
-                
-                # Adjust ROI size if needed
-                # if watermark_height > frame_height or watermark_width > frame_width:
-                #     scaling_factor = min(frame_height / watermark_height, frame_width / watermark_width)
-                #     watermark_width = int(watermark_width * scaling_factor)
-                #     watermark_height = int(watermark_height * scaling_factor)
-                #     watermark_cv2 = cv2.resize(watermark_cv2, (watermark_width, watermark_height), interpolation=cv2.INTER_AREA)
 
             overlay = frame[20:20+watermark_height, 10:10+watermark_width]
             if watermark_cv2.shape[2] == 4:  # RGBA watermark
@@ -387,171 +375,6 @@ def create_video_with_audio(video_path: str, image_urls: list, words: list, audi
 
             out.write(frame)
             frame_idx += 1
-
-
-    # for frame in looped_background_frames:
-    #     print(f"frame: {frame_idx}")
-        # for i, img in enumerate(overlay_images):
-        #     start = 0 if i == 0 else image_end_times[i - 1]
-        #     end = image_end_times[i] if i != len(image_end_times) - 1 else int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) / (fps)
-
-        #     # Adjust timing for doubled FPS
-        #     if start <= frame_idx / (fps) <= end:
-        #         total_frames = int((end - start) * fps)
-        #         ken_burns_frame_idx = int((frame_idx / (fps) - start) * (fps))
-
-        #         img_resized = cv2.resize(img, (width, height // 2))
-        #         ken_burns_image = apply_smooth_ken_burns(img_resized, ken_burns_frame_idx, total_frames)
-
-        #         top_half_frame = frame[0:height // 2, 0:width]
-        #         top_half_frame = cv2.addWeighted(top_half_frame, 0, ken_burns_image, 1, 0)
-        #         frame[0:height // 2, 0:width] = top_half_frame
-        #         break
-
-        # for i, (text, start, end) in enumerate(words):
-        #     if text == '$':
-        #         continue
-
-        #     # print(text)
-        #     if start <= frame_idx / (fps) <= end:
-        #         # text = text.replace("\n\n", "")
-        #         # text = text.replace("—", "")
-        #         # print(f"Adding text '{text}' at frame {frame_idx}")
-        #         (text_width, text_height), baseline = cv2.getTextSize(text, font, font_scale, thickness)
-        #         # Calculate the center position
-        #         center_x = (width - text_width) // 2  # Horizontal center
-        #         center_y = (height + text_height) // 2  # Vertical center
-                
-        #         text = text.replace("’", "'").replace("—", "-")
-
-        #         cv2.putText(frame, text, (center_x, center_y), font, font_scale, outline_color, outline_thickness, cv2.LINE_AA)
-        #         cv2.putText(frame, text, (center_x, center_y), font, font_scale, font_color, thickness, cv2.LINE_AA)           
-
-            
-        #     # Adjust ROI size if needed
-        #     # if watermark_height > frame_height or watermark_width > frame_width:
-        #     #     scaling_factor = min(frame_height / watermark_height, frame_width / watermark_width)
-        #     #     watermark_width = int(watermark_width * scaling_factor)
-        #     #     watermark_height = int(watermark_height * scaling_factor)
-        #     #     watermark_cv2 = cv2.resize(watermark_cv2, (watermark_width, watermark_height), interpolation=cv2.INTER_AREA)
-
-        # overlay = frame[20:20+watermark_height, 10:10+watermark_width]
-        # if watermark_cv2.shape[2] == 4:  # RGBA watermark
-        #     watermark_rgb = watermark_cv2[:, :, :3]
-        #     watermark_alpha = watermark_cv2[:, :, 3] / 255.0
-        #     for c in range(3):
-        #         overlay[:, :, c] = (1 - watermark_alpha) * overlay[:, :, c] + watermark_alpha * watermark_rgb[:, :, c]
-        # else:
-        #     overlay = cv2.addWeighted(overlay, 0, watermark_cv2, 1, 0)
-
-        # frame[20:20+watermark_height, 10:10+watermark_width] = overlay
-
-        # out.write(frame)
-        # frame_idx += 1
-
-
-    # image_durations = [
-    #     (overlay_images[i], start, end)
-    #     for i, (start, end) in enumerate([(words[i - 1][2], words[i][2]) for i, word in enumerate(words) if word[0] == "$"])
-    # ]
-    # print(f"Image durations: {image_durations}")
-
-    # font = cv2.FONT_HERSHEY_SIMPLEX
-    # font_scale = 2
-    # font_color = (255, 255, 255)  # White text
-    # outline_color = (0, 0, 0)     # Black outline
-    # thickness = 8                 # Thickness for the main text
-    # outline_thickness = 14         # Thickness for the outline
-
-    # # Load the watermark
-    # watermark_path = download_from_gcs("/tmp/watermark.png", "watermark.png", "watermark-asset")
-    # if not watermark_path:
-    #     raise RuntimeError("Error: Could not load watermark image.")
-
-    # watermark_cv2 = cv2.imread(watermark_path, cv2.IMREAD_UNCHANGED)
-    # if watermark_cv2 is None:
-    #     raise RuntimeError("Error: Failed to read the watermark image with OpenCV.")
-
-    # # Resize the watermark
-    # watermark_height, watermark_width = watermark_cv2.shape[:2][0] // 16, watermark_cv2.shape[:2][1] // 16
-    # watermark_cv2 = cv2.resize(watermark_cv2, (watermark_width, watermark_height), interpolation=cv2.INTER_AREA)
-
-    # frame_idx = 0
-    # while cap.isOpened():
-    #     ret, frame = cap.read()
-    #     if not ret:
-    #         print(f"End of video reached at frame {frame_idx}")
-    #         break
-        
-    #     if frame is None:
-    #         print(f"Warning: Empty frame at {frame_idx}")
-    #         continue
-
-    #     # # Loop background video if necessary
-    #     # if frame_idx / fps >= video_duration:
-    #     #     print("Loop")
-    #     #     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-    #     #     ret, frame = cap.read()
-
-    #     # Overlay the corresponding image
-    #     for _ in range(2):
-            # for i, img in enumerate(overlay_images):
-            #     start = 0 if i == 0 else image_end_times[i - 1]
-            #     end = image_end_times[i] if i != len(image_end_times) - 1 else int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) / (fps)
-
-            #     # Adjust timing for doubled FPS
-            #     if start <= frame_idx / (fps * 2) <= end:
-            #         total_frames = int((end - start) * fps * 2)
-            #         ken_burns_frame_idx = int((frame_idx / (fps * 2) - start) * (fps * 2))
-
-            #         img_resized = cv2.resize(img, (width, height // 2))
-            #         ken_burns_image = apply_smooth_ken_burns(img_resized, ken_burns_frame_idx, total_frames)
-
-            #         top_half_frame = frame[0:height // 2, 0:width]
-            #         top_half_frame = cv2.addWeighted(top_half_frame, 0, ken_burns_image, 1, 0)
-            #         frame[0:height // 2, 0:width] = top_half_frame
-            #         break
-
-            # for i, (text, start, end) in enumerate(words):
-            #     if text == '$':
-            #         continue
-
-            #     # print(text)
-            #     if start <= frame_idx / (fps * 2) <= end:
-            #         # text = text.replace("\n\n", "")
-            #         # text = text.replace("—", "")
-            #         # print(f"Adding text '{text}' at frame {frame_idx}")
-            #         (text_width, text_height), baseline = cv2.getTextSize(text, font, font_scale, thickness)
-            #         # Calculate the center position
-            #         center_x = (width - text_width) // 2  # Horizontal center
-            #         center_y = (height + text_height) // 2  # Vertical center
-                    
-            #         text = text.replace("’", "'").replace("—", "-")
-
-            #         cv2.putText(frame, text, (center_x, center_y), font, font_scale, outline_color, outline_thickness, cv2.LINE_AA)
-            #         cv2.putText(frame, text, (center_x, center_y), font, font_scale, font_color, thickness, cv2.LINE_AA)           
-
-            
-            # # Adjust ROI size if needed
-            # # if watermark_height > frame_height or watermark_width > frame_width:
-            # #     scaling_factor = min(frame_height / watermark_height, frame_width / watermark_width)
-            # #     watermark_width = int(watermark_width * scaling_factor)
-            # #     watermark_height = int(watermark_height * scaling_factor)
-            # #     watermark_cv2 = cv2.resize(watermark_cv2, (watermark_width, watermark_height), interpolation=cv2.INTER_AREA)
-
-            # overlay = frame[20:20+watermark_height, 10:10+watermark_width]
-            # if watermark_cv2.shape[2] == 4:  # RGBA watermark
-            #     watermark_rgb = watermark_cv2[:, :, :3]
-            #     watermark_alpha = watermark_cv2[:, :, 3] / 255.0
-            #     for c in range(3):
-            #         overlay[:, :, c] = (1 - watermark_alpha) * overlay[:, :, c] + watermark_alpha * watermark_rgb[:, :, c]
-            # else:
-            #     overlay = cv2.addWeighted(overlay, 0, watermark_cv2, 1, 0)
-
-            # frame[20:20+watermark_height, 10:10+watermark_width] = overlay
-
-            # out.write(frame)
-            # frame_idx += 1
 
     cap.release()
     out.release()
