@@ -176,6 +176,8 @@ def generate_audio(script: str, script_with_time_delimiter: str, voice_id: str, 
             curr_word = ''
         else:
             curr_word += char
+    if curr_word:
+        words.append((curr_word, start_times[len(start_times) - len(curr_word)], end_times[-1]))
     word_list = script_with_time_delimiter.split()
     word_count = 0
     print(f"Wordlist: {word_list}")
