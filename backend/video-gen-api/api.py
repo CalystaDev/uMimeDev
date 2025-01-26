@@ -478,7 +478,7 @@ def select_background_music(video_id):
     music_id = data.get('music_id')
     if not music_id:
         return jsonify({"error": "Music ID is required"}), 400
-    if music_id == "none":
+    if music_id == "nomusic":
         if video_id in generation_data:
             generation_data[video_id]['background_music_path'] = None
         else:
